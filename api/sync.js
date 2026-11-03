@@ -4,7 +4,7 @@
 const HOST = 'https://parents.sbschools.org';
 
 class Jar {
-  constructor() { this.c = {}; }
+  constructor() { this.c = {}; this.trace = []; }
   add(res) {
     for (const line of res.headers.getSetCookie()) {
       const kv = line.split(';')[0], i = kv.indexOf('=');
@@ -22,6 +22,7 @@ async function go(jar, url, opt = {}) {
       headers: { ...(opt.headers || {}), Cookie: jar.get(), 'User-Agent': 'Mozilla/5.0' }
     });
     jar.add(res);
+    jar.trace.push((opt.method || 'GET') + ' ' + new URL(url).pathname + ' ' + res.status);
     const loc = res.headers.get('Location');
     if (res.status >= 300 && res.status < 400 && loc) {
       url = new URL(loc, url).href;
@@ -61,11 +62,22 @@ module.exports = async (req, res) => {
       }).toString()
     });
     const home = await go(jar, HOST + '/genesis/sis/view?gohome=true');
-    const m = (await home.text()).match(/studentid=(\d+)/);
-    if (!m) return res.status(401).json({ error: 'Login failed. Check your username and password.' });
+    const homeHtml = await home.text();
+    const m = homeHtml.match(/studentid=(\d+)/);
+    if (!m) {
+      return res.status(401).json({
+        error: 'Login failed. Check your username and password.',
+        debug: {
+          steps: jar.trace,
+          pageTitle: (homeHtml.match(/<title>([^<]*)/i) || [])[1] || '',
+          loginFormShown: homeHtml.includes('j_password'),
+          cookieNames: Object.keys(jar.c)
+        }
+      });
+    }
     const g = await go(jar, HOST + '/genesis/parents?tab1=studentdata&tab2=gradebook&tab3=weeklysummary&action=form&studentid=' + m[1]);
     return res.status(200).json({ html: await g.text() });
   } catch (e) {
-    return res.status(502).json({ error: 'Couldn’t reach Genesis. Try again.' });
+    return res.status(502).json({ error: 'Couldn’t reach Genesis. Try again.', debug: { problem: String(e && e.message) } });
   }
 };
