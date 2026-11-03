@@ -355,7 +355,11 @@ function getEligibility(item){
 
   // Evaluate each catalog alternative independently so a grade in one course
   // can never be compared with the threshold belonging to a different course.
-  const clauses=String(item.prereq||'').replace(/\([^)]*\)/g,'').split(/\s+or\s+/i);
+  // The catalog uses both "or" and comma-separated shorthand alternatives
+  // (for example: Algebra 2 >=93, AA2 >=73 or HA2 >=65). Split those
+  // independently so each course keeps its own grade threshold.
+  const clauses=String(item.prereq||'').replace(/\([^)]*\)/g,'')
+    .split(/\s+or\s+|,\s*(?=(?:AA2|HA2|A1\+?|EG|MCLA)\b)/i);
   const parsed=clauses.map(clause=>{
     const m=clause.match(/(?:>=|>|at least\s*)\s*(\d{1,3})\s*%?|\b(\d{1,3})\s*%\s*(?:or better\s*)?(?:in\s*)?/i);
     if(!m)return {course:clause.trim(),threshold:null};
@@ -394,6 +398,26 @@ function getEligibility(item){
   }
   return {label:'Needs review',cls:'review',detail:item.prereq==='Not specified in catalog'?'The catalog does not provide a clear prerequisite statement.':'GradeUp cannot verify prior completed courses, recommendations, placement, or other conditions from the current Genesis gradebook. '+item.prereq};
 }
+function catalogPrereqMentionsCourse(prereq,activeName){
+  const key=prereqCourseKey(activeName);
+  if(!key)return false;
+  const normalized=prereqCourseKey(prereq);
+  return (` ${normalized} `).includes(` ${key} `);
+}
+function recommendedNextCourses(){
+  const next=Number(PREFS.nextGrade);
+  return COURSE_CATALOG.filter(item=>
+    item.prereq && item.prereq!=='No prerequisites' &&
+    (!item.grades.length||!next||item.grades.includes(next)) &&
+    !((PREFS.selected||[]).includes(item.code)) &&
+    S.classes.some(course=>catalogPrereqMentionsCourse(item.prereq,course.name))
+  ).map(item=>({item,status:getEligibility(item)}));
+}
+function recommendedCoursesMarkup(){
+  const rows=recommendedNextCourses();
+  if(!rows.length)return '<div class="empty">No direct next-course matches were found from your current Genesis courses. You can still explore the full catalog below.</div>';
+  return rows.map(({item,status})=>`<div class="catalog-item"><div class="grow"><b>${esc(item.name)}</b><div class="course-meta">${esc(item.category)} · ${item.credits.toFixed(1)} credits</div><div class="small" style="margin-top:4px">Follows one of your current courses · ${esc(status.label)}</div></div><button class="${(PREFS.selected||[]).includes(item.code)?'added':''}" onclick="toggleGoalCourse('${item.code}')">${(PREFS.selected||[]).includes(item.code)?'Added ✓':'Add to plan'}</button></div>`).join('');
+}
 function saveNextYearPrefs(){
   const grade=$('#nextGrade')?.value||'';
   if(!grade){alert('Choose the grade you will be entering next year first.');return;}
@@ -405,6 +429,7 @@ function toggleGoalCourse(code){
   PREFS.selected=Array.from(selected);savePreferences();
   const results=$('#goalCourseResults');if(results)results.innerHTML=catalogResultsMarkup();
   const selectedBox=$('#selectedGoals');if(selectedBox)selectedBox.innerHTML=selectedGoalsMarkup();
+  const recommendations=$('#recommendedCourses');if(recommendations)recommendations.innerHTML=recommendedCoursesMarkup();
   const counter=$('#goalCount');if(counter)counter.textContent=String(PREFS.selected.length);
 }
 function searchGoals(){
@@ -428,6 +453,7 @@ function goalsTab(){
   return `<div class="tab-intro"><h1>Next Year's Goals</h1><p>Plan your classes using the South Brunswick High School 2026–27 catalog.</p></div>
   ${setup?`<div class="card"><h2 style="margin:0 0 5px">Set up your course plan</h2><p class="mut">GradeUp found your current courses in Genesis. Choose the grade you'll be entering next year, then save courses you're considering.</p><div class="small" style="margin:12px 0 6px"><b>Current courses detected from Genesis (${S.classes.length})</b></div><div class="row" style="flex-wrap:wrap;gap:7px">${S.classes.map(c=>`<span class="pill">${esc(c.name)}</span>`).join('')||'<span class="small">No current courses detected.</span>'}</div><div class="preference-editor" style="margin-top:16px"><label class="small" for="nextGrade">Next year's grade</label><select id="nextGrade"><option value="">Choose grade</option>${[9,10,11,12].map(g=>`<option value="${g}" ${Number(PREFS.nextGrade)===g?'selected':''}>Grade ${g}</option>`).join('')}</select><button onclick="saveNextYearPrefs()">Save grade and continue</button></div></div>`:`<div class="card"><div class="row" style="justify-content:space-between;align-items:center"><div><b>Planning for Grade ${esc(PREFS.nextGrade||'—')}</b><div class="small">${(PREFS.selected||[]).length} courses saved</div></div><button class="ghost" onclick="editPreferences()">Edit setup</button></div></div>`}
   <h2>Saved course preferences <span class="pill" id="goalCount">${(PREFS.selected||[]).length}</span></h2><div class="card" id="selectedGoals">${selectedGoalsMarkup()}</div>
+  <h2>Recommended next courses</h2><p class="mut" style="margin-top:-5px">Courses whose catalog prerequisites connect to classes you're taking now. These are pathway suggestions, not guaranteed placements.</p><div class="card" id="recommendedCourses">${recommendedCoursesMarkup()}</div>
   <h2>Explore the course catalog</h2><p class="mut" style="margin-top:-5px">Search by course, department, or course code. Courses outside the selected grade are filtered out.</p>
   <div class="catalog-toolbar"><input id="goalSearch" placeholder="Search courses…" value="${esc(catalogQuery)}" oninput="searchGoals()"><select id="goalCategory" onchange="searchGoals()">${cats.map(c=>`<option value="${esc(c)}" ${catalogCategory===c?'selected':''}>${esc(c==='All'?'All departments':c)}</option>`).join('')}</select></div>
   <div class="catalog-results" id="goalCourseResults">${catalogResultsMarkup()}</div>
