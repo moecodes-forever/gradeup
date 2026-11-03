@@ -48,6 +48,21 @@ const $=s=>document.querySelector(s);
 let S=null;
 try{S=JSON.parse(localStorage.getItem('gradeup')||'null')}catch(e){}
 S=S||{classes:[]};
+S.classes=S.classes||[];
+// Migrate older imported grades out of the fake assignment used by the first version.
+S.classes.forEach(c=>{
+  c.items=c.items||[];
+  c.cats=c.cats||[];
+  c.hypo=c.hypo||[];
+  const oldImport=c.items.find(i=>i.imp);
+  if(oldImport && c.importedGrade==null && oldImport.max>0){
+    c.importedGrade=oldImport.score/oldImport.max*100;
+    c.mode='weighted';
+  }
+  c.items=c.items.filter(i=>!i.imp);
+});
+// Migrate existing installs: students with previously imported classes land on Grades.
+if (typeof S.loggedIn !== 'boolean') S.loggedIn = S.classes.length > 0;
 let cur=null;
 const save=()=>{try{localStorage.setItem('gradeup',JSON.stringify(S))}catch(e){}};
 const uid=()=>Math.random().toString(36).slice(2,9);
@@ -58,14 +73,27 @@ const letter=g=>g===null?'':g>=90?'A':g>=80?'B':g>=70?'C':g>=60?'D':'F';
 
 // grade math: works for points-based and weighted classes
 function calc(c,extra){
-  const items=c.items.concat(extra||[]).filter(i=>i.score!==null&&i.max>0);
-  if(!items.length)return null;
-  if(c.mode==='points'){let s=0,m=0;items.forEach(i=>{s+=i.score;m+=i.max});return s/m*100}
+  const items=(c.items||[]).concat(extra||[]).filter(i=>i.score!==null&&i.max>0&&!i.imp);
+  if(c.mode==='points'){
+    if(!items.length)return c.importedGrade ?? null;
+    let s=0,m=0;items.forEach(i=>{s+=i.score;m+=i.max});
+    return m?s/m*100:(c.importedGrade ?? null);
+  }
+  const cats=c.cats||[];
+  const totalWeight=cats.reduce((sum,k)=>sum+(Number(k.weight)||0),0);
+  // Until weights are configured to 100%, keep showing the official Genesis grade.
+  if(!cats.length || Math.abs(totalWeight-100)>0.001) return c.importedGrade ?? null;
   const by={};
   items.forEach(i=>{const b=by[i.cat]||(by[i.cat]={s:0,m:0});b.s+=i.score;b.m+=i.max});
-  let tw=0,tot=0;
-  c.cats.forEach(k=>{const b=by[k.id];if(b&&k.weight>0){tw+=k.weight;tot+=k.weight*b.s/b.m}});
-  return tw?tot/tw*100:null;
+  let activeWeight=0,weightedTotal=0;
+  cats.forEach(k=>{
+    const b=by[k.id];
+    if(b&&b.m>0&&k.weight>0){
+      activeWeight+=k.weight;
+      weightedTotal+=k.weight*(b.s/b.m*100);
+    }
+  });
+  return activeWeight?weightedTotal/activeWeight:(c.importedGrade ?? null);
 }
 // score needed on one new assignment to reach a target grade (bisection)
 function needed(c,target,cat,max){
@@ -81,13 +109,27 @@ const find=id=>S.classes.find(c=>c.id===id);
 
 function home(){
   cur=null;
+  if(!S.loggedIn){
+    $('#app').innerHTML=`<h1>GradeUp</h1>
+      <p class="sub">Sign in with Genesis to see your classes and grades.</p>
+      <h2 style="margin-top:24px">Login</h2>
+      <div class="card form">
+        <p class="mut full" style="margin:0">Use your South Brunswick Genesis account. Your password is sent to the GradeUp sync endpoint for this login attempt and is not saved in GradeUp.</p>
+        <input id="gu" autocomplete="username" placeholder="Genesis username">
+        <input id="gp" type="password" autocomplete="current-password" placeholder="Password">
+        <button class="full" onclick="syncGenesis()">Log in</button>
+        <div id="gs" class="full" role="status" aria-live="polite"></div>
+        <div id="pv" class="full" hidden></div>
+      </div>`;
+    return;
+  }
   let h='<h1>GradeUp</h1><p class="sub">Your classes and where you stand.</p>';
-  if(!S.classes.length)h+='<div class="card empty">No classes yet. Sync your grades below.</div>';
+  if(!S.classes.length)h+='<div class="card empty">No classes have been imported yet. Sign in again to sync your grades.</div>';
   S.classes.forEach(c=>{
     const g=calc(c);
-    h+=`<div class="card cls row" onclick="open_('${c.id}')"><div class="grow"><b>${esc(c.name)}</b><div class="mut">${c.teacher?esc(c.teacher)+' · ':''}${c.mode==='weighted'?'Weighted categories':'Total points'} · ${c.items.length} assignments</div></div><div style="text-align:right"><div style="font-size:24px;font-weight:800">${fmt(g)}</div>${g!==null?`<span class="pill">${letter(g)}</span>`:''}</div></div>`;
+    const assignmentCount=(c.items||[]).filter(i=>!i.imp).length;
+    h+=`<div class="card cls row" onclick="open_('${c.id}')"><div class="grow"><b>${esc(c.name)}</b><div class="mut">${c.teacher?esc(c.teacher)+' · ':''}${c.mode==='weighted'?'Weighted categories':'Total points'} · ${assignmentCount} assignments</div></div><div style="text-align:right"><div style="font-size:24px;font-weight:800">${fmt(g)}</div>${g!==null?`<span class="pill">${letter(g)}</span>`:''}</div></div>`;
   });
-  h+=`<h2>Import from Genesis</h2><div class="card form"><p class="mut full" style="margin:0">Sign in with your Genesis login and GradeUp grabs your grades for you. Your password is used once to log in and is never saved.</p><input id="gu" autocomplete="username" placeholder="Genesis username"><input id="gp" type="password" autocomplete="current-password" placeholder="Password"><button class="full" onclick="syncGenesis()">Sync my grades</button><div id="gs" class="full"></div></div><div id="pv" class="card" hidden></div>`;
   $('#app').innerHTML=h;
 }
 function addClass(){
@@ -115,11 +157,18 @@ function view(){
     h+=`<div class="card form"><input id="kn" placeholder="New category"><input id="kw" type="number" placeholder="Weight %"><button class="full" onclick="addCat()">Add category</button></div>`;
   }
 
+  if(c.importedGrade!==undefined&&c.importedGrade!==null){
+    h+=`<p class="mut">Genesis grade: <b>${fmt(c.importedGrade)}</b>${c.mode==='weighted'&&Math.abs((c.cats||[]).reduce((a,k)=>a+(Number(k.weight)||0),0)-100)>0.001?' · Configure category weights to calculate your GradeUp average.':' · Imported from Genesis.'}</p>`;
+  }
   h+=`<h2>Assignments</h2>`;
-  if(!c.items.length)h+='<div class="card empty">No assignments yet. Add one below.</div>';
-  c.items.forEach(i=>{h+=`<div class="card row"><div class="grow"><b>${esc(i.name)}</b><div class="mut">${catName(c,i)}${i.score===null?'Not graded':i.score+' / '+i.max+' ('+fmt(i.score/i.max*100)+')'}</div></div>${i.imp?`<button class="ghost" onclick="impPts('${i.id}')">Set points</button>`:''}<button class="x" onclick="delItem('${i.id}')" aria-label="Delete ${esc(i.name)}">✕</button></div>`});
-  h+=`<div class="card form"><input class="full" id="an" placeholder="Assignment name">${c.mode==='weighted'?`<div class="full">${catSel(c,'ac')}</div>`:''}<input id="as" type="number" step="any" placeholder="Score (blank if ungraded)"><input id="am" type="number" step="any" placeholder="Points possible"><button class="full" onclick="addItem()">Add assignment</button></div>`;
+  if(c.mode==='weighted'&&!c.cats.length)h+='<div class="card empty">Add your class grading categories and weights above before adding assignments.</div>';
+  if(!(c.items||[]).filter(i=>!i.imp).length)h+='<div class="card empty">No assignments added yet.</div>';
+  c.items.filter(i=>!i.imp).forEach(i=>{h+=`<div class="card row"><div class="grow"><b>${esc(i.name)}</b><div class="mut">${catName(c,i)}${i.score===null?'Not graded':i.score+' / '+i.max+' ('+fmt(i.score/i.max*100)+')'}</div></div>${i.imp?`<button class="ghost" onclick="impPts('${i.id}')">Set points</button>`:''}<button class="x" onclick="delItem('${i.id}')" aria-label="Delete ${esc(i.name)}">✕</button></div>`});
+  if(c.mode!=='weighted'||c.cats.length){
+    h+=`<div class="card form"><input class="full" id="an" placeholder="Assignment name">${c.mode==='weighted'?`<div class="full">${catSel(c,'ac')}</div>`:''}<input id="as" type="number" step="any" placeholder="Score (blank if ungraded)"><input id="am" type="number" step="any" placeholder="Points possible"><button class="full" onclick="addItem()">Add assignment</button></div>`;
+  }
 
+  if(c.mode!=='weighted'||c.cats.length){
   h+=`<h2>What if</h2><div class="card wi"><p class="mut" style="margin:0 0 10px">Try pretend grades. Nothing here changes your real grade.</p>`;
   if(hasH){const d=gw-g;h+=`<div class="row" style="margin-bottom:12px"><div><div class="mut">Now</div><b style="font-size:22px">${fmt(g)}</b></div><div style="font-size:22px">→</div><div><div class="mut">With what ifs</div><b style="font-size:22px">${fmt(gw)}</b></div>${g!==null&&gw!==null?`<span class="pill ${d<0?'bad':''}" style="margin-left:auto">${d>=0?'+':''}${(Math.round(d*100)/100)}</span>`:''}</div>`;}
   c.hypo.forEach(i=>{h+=`<div class="card hypo row"><div class="grow"><b>${esc(i.name)}</b><div class="mut">${catName(c,i)}${i.score} / ${i.max}</div></div><button class="x" onclick="delHypo('${i.id}')" aria-label="Remove ${esc(i.name)}">✕</button></div>`});
@@ -127,12 +176,14 @@ function view(){
 
   h+=`<h2>What do I need?</h2><div class="card wi"><p class="mut" style="margin:0 0 10px">Pick a grade you want and see what to score on your next assignment.</p><div class="form"><input id="nt" type="number" step="any" placeholder="Target grade %, e.g. 91"><input id="nm" type="number" step="any" placeholder="Points possible"><div class="full">${c.mode==='weighted'?catSel(c,'nc'):''}</div><button class="full" onclick="runNeed()">Calculate</button></div><div id="nr" style="margin-top:12px;font-weight:600"></div></div>`;
 
+  }
   h+=`<p style="margin-top:30px"><button class="ghost" onclick="delClass()">Delete this class</button></p>`;
   $('#app').innerHTML=h;
 }
 
 function addItem(){
   const c=find(cur),name=$('#an').value.trim(),max=num($('#am').value),score=num($('#as').value);
+  if(c.mode==='weighted'&&!c.cats.length){alert('Add grading categories and set their weights to 100% first.');return}
   if(!name){$('#an').focus();return}
   if(!(max>0)){$('#am').focus();return}
   c.items.push({id:uid(),name,cat:c.mode==='weighted'?$('#ac').value:null,score,max});save();view();
@@ -182,8 +233,12 @@ async function syncGenesis(){
     if(!r.ok){out.innerHTML='<span class="bad">'+esc(d.error||'Something went wrong.')+'</span>'+(d.debug?'<pre class="mut" style="white-space:pre-wrap;font-size:12px;margin:8px 0 0">'+esc(JSON.stringify(d.debug,null,1))+'</pre>':'');return}
     const text=d.html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi,'').replace(/<[^>]+>/g,'\n').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&');
     found=parseGrades(text);
+    if(!found.length){
+      out.innerHTML='<span class="warn">Genesis login worked, but GradeUp could not identify your classes. The page format may have changed.</span>';
+      return;
+    }
     out.textContent='';
-    showPreview();
+    doImport();
   }catch(e){out.innerHTML='<span class="bad">Couldn’t reach the login server. If you opened this file from your computer, use the hosted link instead.</span>'}
 }
 let found=[];
@@ -238,15 +293,21 @@ function showPreview(){
 }
 function doImport(){
   found.forEach((f,k)=>{
-    if(!$('#ck'+k).checked)return;
-    const name=$('#fn'+k).value.trim(),g=num($('#fg'+k).value);
+    const check=$('#ck'+k),nameInput=$('#fn'+k),gradeInput=$('#fg'+k);
+    if(check&&!check.checked)return;
+    const name=(nameInput?nameInput.value:f.name).trim();
+    const g=gradeInput?num(gradeInput.value):num(f.g);
     if(!name||g===null)return;
-    let c=S.classes.find(c=>c.mode==='points'&&c.name.toLowerCase()===name.toLowerCase());
-    if(!c){c={id:uid(),name,mode:'points',cats:[],items:[],hypo:[]};S.classes.push(c)}
+    let c=S.classes.find(c=>c.name.toLowerCase()===name.toLowerCase());
+    if(!c){c={id:uid(),name,mode:'weighted',cats:[],items:[],hypo:[]};S.classes.push(c)}
+    c.mode='weighted';
+    c.cats=c.cats||[];
+    c.items=(c.items||[]).filter(i=>!i.imp);
+    c.hypo=c.hypo||[];
+    c.importedGrade=g;
     if(f.t)c.teacher=f.t;
-    const imp=c.items.find(i=>i.imp);
-    if(imp)imp.score=g/100*imp.max;else c.items.unshift({id:uid(),name:'Imported from Genesis',cat:null,score:g,max:100,imp:true});
   });
+  S.loggedIn=true;
   save();home();
 }
 function impPts(id){
