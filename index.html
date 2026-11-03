@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#bbf7d0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="GradeUp">
+<title>GradeUp</title>
+<style>
+:root{--bg:#f3faf5;--card:#fff;--tx:#12231a;--mut:#5b7064;--ac:#15803d;--acl:#bbf7d0;--bd:#d9e8de;--bad:#c62828;--warn:#b45309;--wi:#eef2ff;--wib:#6366f1;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root{--bg:#0e1612;--card:#16211b;--tx:#e6f2ea;--mut:#8fa598;--ac:#4ade80;--acl:#14532d;--bd:#26372c;--bad:#f87171;--warn:#fbbf24;--wi:#1b1f3a;--wib:#a5b4fc}}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:640px;margin:0 auto;padding:20px 16px 60px}
+h1{font-size:28px;margin:0 0 4px;letter-spacing:-.5px}
+h2{font-size:18px;margin:26px 0 10px}
+.sub{color:var(--mut);margin:0 0 18px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:14px;margin-bottom:10px}
+.row{display:flex;align-items:center;gap:10px}
+.grow{flex:1;min-width:0}
+.cls{cursor:pointer}
+.cls:hover{border-color:var(--ac)}
+.big{font-size:44px;font-weight:800;letter-spacing:-1.5px;line-height:1}
+.pill{display:inline-block;padding:2px 10px;border-radius:99px;background:var(--acl);color:var(--ac);font-weight:700;font-size:14px}
+.mut{color:var(--mut);font-size:14px}
+input,select,textarea{font:inherit;color:var(--tx);background:var(--bg);border:1px solid var(--bd);border-radius:10px;padding:9px 10px;min-width:0;width:100%}
+input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid var(--ac);outline-offset:1px}
+.form{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.form .full{grid-column:1/-1}
+button{font:inherit;cursor:pointer;border:0;border-radius:10px;padding:10px 14px;background:var(--ac);color:#fff;font-weight:600}
+@media(prefers-color-scheme:dark){button{color:#06220f}}
+button.ghost{background:transparent;color:var(--mut);padding:6px 10px;font-weight:500}
+button.x{background:transparent;color:var(--bad);padding:4px 8px}
+.back{background:transparent;color:var(--ac);padding:0;margin-bottom:14px}
+.wi{background:var(--wi);border-color:var(--wib)}
+.hypo{border-style:dashed}
+.good{color:var(--ac)}.bad{color:var(--bad)}.warn{color:var(--warn)}
+.empty{text-align:center;color:var(--mut);padding:30px 10px}
+.sc{width:84px;flex:none}
+</style>
+</head>
+<body>
+<main id="app"></main>
+<script>
+const $=s=>document.querySelector(s);
+let S=null;
+try{S=JSON.parse(localStorage.getItem('gradeup')||'null')}catch(e){}
+S=S||{classes:[]};
+let cur=null;
+const save=()=>{try{localStorage.setItem('gradeup',JSON.stringify(S))}catch(e){}};
+const uid=()=>Math.random().toString(36).slice(2,9);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const num=v=>{v=String(v).trim();if(v==='')return null;const n=parseFloat(v);return isNaN(n)?null:n};
+const fmt=g=>g===null?'–':(Math.round(g*100)/100)+'%';
+const letter=g=>g===null?'':g>=90?'A':g>=80?'B':g>=70?'C':g>=60?'D':'F';
+
+// grade math: works for points-based and weighted classes
+function calc(c,extra){
+  const items=c.items.concat(extra||[]).filter(i=>i.score!==null&&i.max>0);
+  if(!items.length)return null;
+  if(c.mode==='points'){let s=0,m=0;items.forEach(i=>{s+=i.score;m+=i.max});return s/m*100}
+  const by={};
+  items.forEach(i=>{const b=by[i.cat]||(by[i.cat]={s:0,m:0});b.s+=i.score;b.m+=i.max});
+  let tw=0,tot=0;
+  c.cats.forEach(k=>{const b=by[k.id];if(b&&k.weight>0){tw+=k.weight;tot+=k.weight*b.s/b.m}});
+  return tw?tot/tw*100:null;
+}
+// score needed on one new assignment to reach a target grade (bisection)
+function needed(c,target,cat,max){
+  const g=s=>calc(c,[{score:s,max,cat}]);
+  if(g(max*5)===null)return {err:'Add at least one graded assignment first.'};
+  if(g(0)!==null&&g(0)>=target)return {score:0};
+  if(g(max*5)<target)return {err:'Out of reach with one assignment. Try a bigger one or add more.'};
+  let lo=0,hi=max*5;
+  for(let i=0;i<40;i++){const mid=(lo+hi)/2;if(g(mid)>=target)hi=mid;else lo=mid}
+  return {score:hi};
+}
+const find=id=>S.classes.find(c=>c.id===id);
+
+function home(){
+  cur=null;
+  let h='<h1>GradeUp</h1><p class="sub">Your classes and where you stand.</p>';
+  if(!S.classes.length)h+='<div class="card empty">No classes yet. Add your first one below.</div>';
+  S.classes.forEach(c=>{
+    const g=calc(c);
+    h+=`<div class="card cls row" onclick="open_('${c.id}')"><div class="grow"><b>${esc(c.name)}</b><div class="mut">${c.teacher?esc(c.teacher)+' · ':''}${c.mode==='weighted'?'Weighted categories':'Total points'} · ${c.items.length} assignments</div></div><div style="text-align:right"><div style="font-size:24px;font-weight:800">${fmt(g)}</div>${g!==null?`<span class="pill">${letter(g)}</span>`:''}</div></div>`;
+  });
+  h+=`<h2>Import from Genesis</h2><div class="card form"><p class="mut full" style="margin:0">Sign in with your Genesis login and GradeUp grabs your grades for you. Your password is used once to log in and is never saved.</p><input id="gu" autocomplete="username" placeholder="Genesis username"><input id="gp" type="password" autocomplete="current-password" placeholder="Password"><button class="full" onclick="syncGenesis()">Sync my grades</button><div id="gs" class="full"></div></div><div class="card"><p class="mut" style="margin:0 0 10px">Or do it by hand: log in to Genesis yourself, open your grades page, select everything (Ctrl+A or Cmd+A), copy it, and paste it here. Your password never touches this app.</p><textarea id="pt" rows="5" placeholder="Paste your Genesis grades page here"></textarea><button style="margin-top:8px;width:100%" onclick="readPaste()">Read grades</button></div><div id="pv" class="card" hidden></div>`;
+  h+=`<h2>Add a class</h2><div class="card form"><input class="full" id="cn" placeholder="Class name, e.g. Honors Biology"><select class="full" id="cm"><option value="points">Total points (points earned ÷ points possible)</option><option value="weighted">Weighted categories (tests 40%, homework 20%…)</option></select><button class="full" onclick="addClass()">Add class</button></div>`;
+  $('#app').innerHTML=h;
+}
+function addClass(){
+  const name=$('#cn').value.trim();if(!name){$('#cn').focus();return}
+  const mode=$('#cm').value;
+  const c={id:uid(),name,mode,cats:[],items:[],hypo:[]};
+  if(mode==='weighted')c.cats=[{id:uid(),name:'Tests',weight:50},{id:uid(),name:'Homework',weight:30},{id:uid(),name:'Quizzes',weight:20}];
+  S.classes.push(c);save();open_(c.id);
+}
+function open_(id){cur=id;view()}
+
+function catSel(c,id){return c.mode==='weighted'?`<select id="${id}">${c.cats.map(k=>`<option value="${k.id}">${esc(k.name)}</option>`).join('')}</select>`:''}
+function catName(c,i){const k=c.cats.find(k=>k.id===i.cat);return c.mode==='weighted'&&k?esc(k.name)+' · ':''}
+
+function view(){
+  const c=find(cur);if(!c)return home();
+  const g=calc(c),gw=calc(c,c.hypo),hasH=c.hypo.length>0;
+  let h=`<button class="back" onclick="home()">← All classes</button><h1>${esc(c.name)}</h1><div class="row" style="margin:10px 0 18px"><div class="big">${fmt(g)}</div>${g!==null?`<span class="pill">${letter(g)}</span>`:''}</div>`;
+
+  if(c.mode==='weighted'){
+    const tw=c.cats.reduce((a,k)=>a+k.weight,0);
+    h+=`<h2>Categories</h2>`;
+    c.cats.forEach(k=>{h+=`<div class="card row"><div class="grow">${esc(k.name)}</div><input class="sc" type="number" min="0" value="${k.weight}" onchange="setW('${k.id}',this.value)" aria-label="${esc(k.name)} weight"><span class="mut">%</span><button class="x" onclick="delCat('${k.id}')" aria-label="Delete ${esc(k.name)}">✕</button></div>`});
+    if(tw!==100)h+=`<p class="mut warn">Weights add up to ${tw}%. They should total 100%.</p>`;
+    h+=`<div class="card form"><input id="kn" placeholder="New category"><input id="kw" type="number" placeholder="Weight %"><button class="full" onclick="addCat()">Add category</button></div>`;
+  }
+
+  h+=`<h2>Assignments</h2>`;
+  if(!c.items.length)h+='<div class="card empty">No assignments yet. Add one below.</div>';
+  c.items.forEach(i=>{h+=`<div class="card row"><div class="grow"><b>${esc(i.name)}</b><div class="mut">${catName(c,i)}${i.score===null?'Not graded':i.score+' / '+i.max+' ('+fmt(i.score/i.max*100)+')'}</div></div>${i.imp?`<button class="ghost" onclick="impPts('${i.id}')">Set points</button>`:''}<button class="x" onclick="delItem('${i.id}')" aria-label="Delete ${esc(i.name)}">✕</button></div>`});
+  h+=`<div class="card form"><input class="full" id="an" placeholder="Assignment name">${c.mode==='weighted'?`<div class="full">${catSel(c,'ac')}</div>`:''}<input id="as" type="number" step="any" placeholder="Score (blank if ungraded)"><input id="am" type="number" step="any" placeholder="Points possible"><button class="full" onclick="addItem()">Add assignment</button></div>`;
+
+  h+=`<h2>What if</h2><div class="card wi"><p class="mut" style="margin:0 0 10px">Try pretend grades. Nothing here changes your real grade.</p>`;
+  if(hasH){const d=gw-g;h+=`<div class="row" style="margin-bottom:12px"><div><div class="mut">Now</div><b style="font-size:22px">${fmt(g)}</b></div><div style="font-size:22px">→</div><div><div class="mut">With what ifs</div><b style="font-size:22px">${fmt(gw)}</b></div>${g!==null&&gw!==null?`<span class="pill ${d<0?'bad':''}" style="margin-left:auto">${d>=0?'+':''}${(Math.round(d*100)/100)}</span>`:''}</div>`;}
+  c.hypo.forEach(i=>{h+=`<div class="card hypo row"><div class="grow"><b>${esc(i.name)}</b><div class="mut">${catName(c,i)}${i.score} / ${i.max}</div></div><button class="x" onclick="delHypo('${i.id}')" aria-label="Remove ${esc(i.name)}">✕</button></div>`});
+  h+=`<div class="form"><input class="full" id="hn" placeholder="Pretend assignment, e.g. Final exam">${c.mode==='weighted'?`<div class="full">${catSel(c,'hc')}</div>`:''}<input id="hs" type="number" step="any" placeholder="Score you might get"><input id="hm" type="number" step="any" placeholder="Points possible"><button class="full" onclick="addHypo()">Add what if</button>${hasH?`<button class="ghost full" onclick="clearHypo()">Clear all what ifs</button>`:''}</div></div>`;
+
+  h+=`<h2>What do I need?</h2><div class="card wi"><p class="mut" style="margin:0 0 10px">Pick a grade you want and see what to score on your next assignment.</p><div class="form"><input id="nt" type="number" step="any" placeholder="Target grade %, e.g. 91"><input id="nm" type="number" step="any" placeholder="Points possible"><div class="full">${c.mode==='weighted'?catSel(c,'nc'):''}</div><button class="full" onclick="runNeed()">Calculate</button></div><div id="nr" style="margin-top:12px;font-weight:600"></div></div>`;
+
+  h+=`<p style="margin-top:30px"><button class="ghost" onclick="delClass()">Delete this class</button></p>`;
+  $('#app').innerHTML=h;
+}
+
+function addItem(){
+  const c=find(cur),name=$('#an').value.trim(),max=num($('#am').value),score=num($('#as').value);
+  if(!name){$('#an').focus();return}
+  if(!(max>0)){$('#am').focus();return}
+  c.items.push({id:uid(),name,cat:c.mode==='weighted'?$('#ac').value:null,score,max});save();view();
+}
+function delItem(id){const c=find(cur);c.items=c.items.filter(i=>i.id!==id);save();view()}
+function addHypo(){
+  const c=find(cur),name=$('#hn').value.trim()||'What if',score=num($('#hs').value),max=num($('#hm').value);
+  if(score===null){$('#hs').focus();return}
+  if(!(max>0)){$('#hm').focus();return}
+  c.hypo.push({id:uid(),name,cat:c.mode==='weighted'?$('#hc').value:null,score,max});save();view();
+}
+function delHypo(id){const c=find(cur);c.hypo=c.hypo.filter(i=>i.id!==id);save();view()}
+function clearHypo(){find(cur).hypo=[];save();view()}
+function addCat(){
+  const c=find(cur),name=$('#kn').value.trim(),w=num($('#kw').value);
+  if(!name){$('#kn').focus();return}
+  c.cats.push({id:uid(),name,weight:w===null?0:w});save();view();
+}
+function setW(id,v){const c=find(cur);c.cats.find(k=>k.id===id).weight=num(v)||0;save();view()}
+function delCat(id){
+  const c=find(cur);if(c.cats.length<2){alert('A weighted class needs at least one category.');return}
+  c.cats=c.cats.filter(k=>k.id!==id);const f=c.cats[0].id;
+  c.items.concat(c.hypo).forEach(i=>{if(i.cat===id)i.cat=f});save();view();
+}
+function delClass(){if(confirm('Delete this class and all its assignments?')){S.classes=S.classes.filter(c=>c.id!==cur);save();home()}}
+function runNeed(){
+  const c=find(cur),t=num($('#nt').value),m=num($('#nm').value),out=$('#nr');
+  if(t===null){$('#nt').focus();return}
+  if(!(m>0)){$('#nm').focus();return}
+  const r=needed(c,t,c.mode==='weighted'?$('#nc').value:null,m);
+  if(r.err){out.className='warn';out.textContent=r.err;return}
+  const pct=r.score/m*100;
+  out.className=pct>100?'bad':'good';
+  out.textContent=r.score===0?`You already have ${t}% or higher. Nothing needed.`:`You need about ${Math.round(r.score*100)/100} / ${m} (${Math.round(pct*10)/10}%) to reach ${t}%.${pct>100?' That’s above 100%, so it would take extra credit.':''}`;
+}
+// The login helper lives at /api/sync on the same site
+const WORKER_URL='/api/sync';
+async function syncGenesis(){
+  const u=$('#gu').value.trim(),p=$('#gp').value,out=$('#gs');
+  if(!WORKER_URL){out.innerHTML='<span class="warn">The login server isn’t set up yet.</span>';return}
+  if(!u||!p){out.innerHTML='<span class="warn">Enter your username and password.</span>';return}
+  out.textContent='Connecting…';
+  try{
+    const r=await fetch(WORKER_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({u,p})});
+    const d=await r.json();
+    $('#gp').value='';
+    if(!r.ok){out.innerHTML='<span class="bad">'+esc(d.error||'Something went wrong.')+'</span>';return}
+    const text=d.html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi,'').replace(/<[^>]+>/g,'\n').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&');
+    found=parseGrades(text);
+    out.textContent='';
+    showPreview();
+  }catch(e){out.innerHTML='<span class="bad">Couldn’t reach the login server. If you opened this file from your computer, use the hosted link instead.</span>'}
+}
+let found=[];
+function parseGenesis(t){
+  const T=t.split(/\r?\n|\t/).map(x=>x.replace(/\u00a0/g,' ').trim()).filter(x=>x&&x!=='|');
+  const isMP=x=>/^MP\d$/.test(x),isDate=x=>/\d+\/\d+/.test(x);
+  const starts=[];
+  for(let k=2;k<T.length;k++)if(isMP(T[k])&&!isDate(T[k-1])&&T[k-1]!=='FG'&&!isMP(T[k-1]))starts.push(k);
+  const out=[];
+  starts.forEach((k,n)=>{
+    let end=n+1<starts.length?starts[n+1]-2:T.length;
+    for(let j=k;j<end;j++)if(/copyright/i.test(T[j])){end=j;break}
+    const fg=T.indexOf('FG',k);
+    if(fg<0||fg>=end)return;
+    let g=null;
+    for(let j=fg+1;j<end;j++){const m=T[j].match(/^(\d{1,3}(?:\.\d+)?)(?:\s*\(?[A-F][+-]?\)?)?$/);if(m)g=parseFloat(m[1])}
+    if(g!==null&&g<=150)out.push({name:T[k-2].slice(0,60),t:T[k-1],g});
+  });
+  return out;
+}
+function parseGrades(t){
+  const a=parseGenesis(t);
+  return a.length?a:parseGeneric(t);
+}
+function parseGeneric(t){
+  const out=[],seen={},skip=/^(grade|grades|average|gpa|term|quarter|marking|course|teacher|room|attendance|current|overall|total|weighted|unweighted)\b/i;
+  const L=t.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+  let prev='';
+  for(const line of L){
+    const cells=line.split(/\t| {2,}/).map(x=>x.trim()).filter(Boolean);
+    let name=null,g=null,m;
+    if(cells.length===1&&(m=line.match(/^(.*[A-Za-z].*?)\s+(\d{1,3}(?:\.\d+)?)\s*%/))){name=m[1];g=parseFloat(m[2])}
+    else if(cells.length===1&&(m=line.match(/^(\d{1,3}(?:\.\d+)?)\s*%/))){name=prev;g=parseFloat(m[1])}
+    else if(cells.length>1){
+      for(let k=0;k<cells.length&&g===null;k++){
+        const x=cells[k].match(/^(\d{1,3}(?:\.\d+)?)\s*%/)||cells[k].match(/^(\d{2,3}(?:\.\d+)?)\s*\(?[A-F][+-]?\)?$/);
+        if(x){g=parseFloat(x[1]);name=cells.find((c,j)=>j!==k&&/[A-Za-z]{3}/.test(c)&&!/%/.test(c))}
+      }
+    }
+    if(g!==null&&g<=150&&name&&!skip.test(name)&&!seen[name.toLowerCase()]){seen[name.toLowerCase()]=1;out.push({name:name.slice(0,60),t:'',g})}
+    else if(g===null)prev=line;
+  }
+  return out;
+}
+function readPaste(){
+  found=parseGrades($('#pt').value);showPreview();
+}
+function showPreview(){
+  const pv=$('#pv');pv.hidden=false;
+  if(!found.length){pv.innerHTML='<p class="mut warn">Couldn’t find any classes with a grade. Make sure you copied the whole grades page.</p>';return}
+  pv.innerHTML='<p class="mut" style="margin:12px 0 6px">Check these, fix any names, and uncheck anything that isn’t a class.</p>'+found.map((f,k)=>`<div class="row" style="margin-bottom:6px"><input type="checkbox" id="ck${k}" checked style="width:auto"><input id="fn${k}" class="grow" value="${esc(f.name)}"><input id="fg${k}" class="sc" type="number" step="any" value="${f.g}"></div>`).join('')+'<button style="width:100%;margin-top:6px" onclick="doImport()">Add to my classes</button>';
+}
+function doImport(){
+  found.forEach((f,k)=>{
+    if(!$('#ck'+k).checked)return;
+    const name=$('#fn'+k).value.trim(),g=num($('#fg'+k).value);
+    if(!name||g===null)return;
+    let c=S.classes.find(c=>c.mode==='points'&&c.name.toLowerCase()===name.toLowerCase());
+    if(!c){c={id:uid(),name,mode:'points',cats:[],items:[],hypo:[]};S.classes.push(c)}
+    if(f.t)c.teacher=f.t;
+    const imp=c.items.find(i=>i.imp);
+    if(imp)imp.score=g/100*imp.max;else c.items.unshift({id:uid(),name:'Imported from Genesis',cat:null,score:g,max:100,imp:true});
+  });
+  save();home();
+}
+function impPts(id){
+  const c=find(cur),i=c.items.find(x=>x.id===id);
+  const v=num(prompt('About how many points are in this class so far? A bigger number means new assignments move your grade less.',i.max));
+  if(!(v>0))return;
+  const p=i.score/i.max;i.max=v;i.score=p*v;save();view();
+}
+home();
+</script>
+</body>
+</html>
