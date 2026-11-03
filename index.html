@@ -52,6 +52,26 @@ button:disabled{opacity:.55;cursor:wait}
 .status{border-radius:10px;background:var(--bg);padding:11px;color:var(--mut);font-size:13px}
 .warn{color:var(--warn)}
 .bad{color:var(--bad)}
+.header-actions{display:flex;align-items:center;gap:9px;position:relative}
+button.logout-btn{padding:9px 15px;border:1px solid rgba(74,222,128,.55);background:linear-gradient(135deg,#166534,#15803d);color:#f0fff4;box-shadow:0 0 0 1px rgba(74,222,128,.16),0 4px 18px rgba(34,197,94,.2);transition:transform .16s,box-shadow .16s}
+button.logout-btn:hover{transform:translateY(-1px);box-shadow:0 0 0 1px rgba(74,222,128,.3),0 0 19px rgba(34,197,94,.36)}
+.account-dropdown{position:relative}
+.account-dropdown summary{list-style:none;display:flex;align-items:center;gap:7px;cursor:pointer;padding:9px 11px;border:1px solid var(--bd);border-radius:10px;background:var(--card);color:var(--tx);font-size:13px;font-weight:650}
+.account-dropdown summary::-webkit-details-marker{display:none}
+.account-dropdown summary::after{content:'⌄';color:var(--mut);font-size:15px}
+.account-dropdown[open] summary{border-color:var(--ac)}
+.account-menu{position:absolute;z-index:30;right:0;top:calc(100% + 8px);width:min(290px,calc(100vw - 36px));padding:13px;border:1px solid var(--bd);border-radius:12px;background:var(--card);box-shadow:0 12px 32px rgba(0,0,0,.24)}
+.account-menu strong{display:block;margin-top:5px;overflow-wrap:anywhere;font-size:13px}
+.predict-area{margin:16px 0 20px}
+button.predict-toggle{background:var(--acl);color:var(--ac);border:1px solid var(--ac);box-shadow:0 3px 14px rgba(34,197,94,.12)}
+.predict-card{margin-top:10px}
+.predict-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}
+.predict-field{display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:650;color:var(--mut)}
+.predict-field input,.predict-field select{font-weight:400}
+.predict-result{margin-top:12px;padding:13px;border:1px solid var(--ac);border-radius:12px;background:var(--bg)}
+.grade-change{font-size:clamp(20px,5vw,28px);font-weight:850;letter-spacing:-.5px;margin:5px 0}
+.predict-help{margin-top:10px}
+@media(max-width:520px){.predict-grid{grid-template-columns:1fr}.header-actions{gap:6px}.account-dropdown summary{padding:8px}.logout-btn{padding:8px 10px!important}}
 @media(max-width:420px){.select-wrap{min-width:130px;max-width:160px}.big{font-size:38px}.card{padding:12px}}
 </style>
 </head>
@@ -60,17 +80,19 @@ button:disabled{opacity:.55;cursor:wait}
 <script>
 const $=selector=>document.querySelector(selector);
 const SESSION_KEY='gradeup_session_v2';
-const emptyState=()=>({loggedIn:false,classes:[],markingPeriods:[],selectedPeriod:'MP1'});
+const emptyState=()=>({loggedIn:false,account:'',classes:[],markingPeriods:[],selectedPeriod:'MP1'});
 let S=emptyState();
 try{
   const saved=sessionStorage.getItem(SESSION_KEY);
   if(saved){const parsed=JSON.parse(saved);if(parsed&&parsed.loggedIn&&Array.isArray(parsed.classes))S={...emptyState(),...parsed};}
 }catch{}
 let currentClassId=null;
+let predictorOpen=false;
+let lastPrediction=null;
 const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const fmt=value=>value===null||value===undefined||!Number.isFinite(Number(value))?'—':`${Math.round(Number(value)*100)/100}%`;
 const fmtNumber=value=>value===null||value===undefined||!Number.isFinite(Number(value))?'—':`${Number.isInteger(Number(value))?Number(value):Number(value).toFixed(1)}`;
-const letter=grade=>grade===null||grade===undefined?'':grade>=90?'A':grade>=80?'B':grade>=70?'C':grade>=60?'D':'F';
+const letter=grade=>grade===null||grade===undefined?'':grade>=93?'A':grade>=90?'A-':grade>=87?'B+':grade>=83?'B':grade>=80?'B-':grade>=77?'C+':grade>=73?'C':grade>=70?'C-':grade>=65?'D':'F';
 const getClass=id=>S.classes.find(course=>course.id===id);
 const getPeriod=course=>course?.periods?.[S.selectedPeriod]||null;
 const periodLabel=id=>S.markingPeriods.find(period=>period.id===id)?.label||`Marking Period ${String(id||'').replace(/^MP/i,'')}`;
@@ -81,18 +103,24 @@ function periodSelector(){
 }
 function changePeriod(value){
   if(!S.markingPeriods.some(period=>period.id===value))return;
-  S.selectedPeriod=value;persist();
+  S.selectedPeriod=value;lastPrediction=null;predictorOpen=false;persist();
   if(currentClassId)view();else home();
 }
 function logout(){
+  predictorOpen=false;lastPrediction=null;
   // Grades are held only for this browser tab session. Clear them on logout to
   // avoid leaving student education records on a shared device.
   try{sessionStorage.removeItem(SESSION_KEY);}catch{}
   S=emptyState();currentClassId=null;home();
 }
 
+function headerActions(){
+  const account=S.account||'Account unavailable';
+  return `<div class="header-actions"><button class="logout-btn" onclick="logout()">Log out</button><details class="account-dropdown"><summary>Account</summary><div class="account-menu"><div class="small">Signed in as</div><strong>${esc(account)}</strong></div></details></div>`;
+}
+
 function home(){
-  currentClassId=null;
+  currentClassId=null;predictorOpen=false;lastPrediction=null;
   if(!S.loggedIn){
     $('#app').innerHTML=`<h1>GradeUp</h1>
       <p class="sub">Your classes. Your grades. All in one place.</p>
@@ -109,7 +137,7 @@ function home(){
   }
 
   const period=S.selectedPeriod;
-  let html=`<div class="row" style="justify-content:space-between;align-items:center"><div><h1>GradeUp</h1><p class="sub" style="margin-bottom:0">Your classes and where you stand.</p></div><button class="ghost" onclick="logout()">Log out</button></div>
+  let html=`<div class="row" style="justify-content:space-between;align-items:center"><div><h1>GradeUp</h1><p class="sub" style="margin-bottom:0">Your classes and where you stand.</p></div>${headerActions()}</div>
     <div class="row" style="justify-content:space-between;align-items:end;margin:20px 0 15px"><div><div class="small">Showing grades for</div><b>${esc(periodLabel(period))}</b></div>${periodSelector()}</div>`;
 
   if(!S.classes.length){
@@ -124,14 +152,62 @@ function home(){
     const secondary=[course.teacher,`${categoryCount} categories`,`${assignmentCount} assignments`].filter(Boolean).join(' · ');
     html+=`<div class="card cls row" role="button" tabindex="0" onclick="openClass('${esc(course.id)}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openClass('${esc(course.id)}')}">
       <div class="grow"><b>${esc(course.name)}</b><div class="mut">${esc(secondary)}</div></div>
-      <div class="grade"><strong>${fmt(grade)}</strong>${grade!==null?`<div><span class="pill">${esc(data?.letter||letter(grade))}</span></div>`:''}</div>
+      <div class="grade"><strong>${fmt(grade)}</strong>${grade!==null?`<div><span class="pill">${esc(letter(grade))}</span></div>`:''}</div>
     </div>`;
   });
   html+=`<p class="small" style="margin-top:18px">Course information is read-only and comes from Genesis. GradeUp does not change grades, assignments, or category weights.</p>`;
   $('#app').innerHTML=html;
 }
 
-function openClass(id){currentClassId=id;view();}
+function openClass(id){currentClassId=id;predictorOpen=false;lastPrediction=null;view();}
+function togglePredict(){predictorOpen=!predictorOpen;lastPrediction=null;view();}
+function showPredictError(message){const box=$('#predictError');if(box){box.hidden=false;box.textContent=message;box.classList.add('bad');}}
+function runPrediction(){
+  const earnedRaw=$('#predictEarned')?.value;
+  const possibleRaw=$('#predictPossible')?.value;
+  const categoryName=$('#predictCategory')?.value;
+  const earned=Number(earnedRaw);
+  const possible=Number(possibleRaw);
+  if(earnedRaw===''||possibleRaw===''||!categoryName){showPredictError('Enter the score, possible points, and category before predicting.');return;}
+  if(!Number.isFinite(earned)||earned<0||!Number.isFinite(possible)||possible<=0){showPredictError('Enter a score of 0 or more and possible points greater than 0.');return;}
+  const course=getClass(currentClassId);
+  const data=getPeriod(course);
+  const category=(data?.categories||[]).find(item=>item.name===categoryName);
+  if(!course||!data||!category){showPredictError('The selected category is no longer available.');return;}
+  const weight=Number(category.weight);
+  if(!Number.isFinite(weight)||weight<=0){showPredictError('Genesis has not provided a usable weight for this category.');return;}
+  const sameCategory=(data.assignments||[]).filter(item=>(item.category||'').trim().toLowerCase()===category.name.trim().toLowerCase());
+  const scored=sameCategory.filter(item=>Number.isFinite(Number(item.earned))&&item.earned!==null&&Number.isFinite(Number(item.possible))&&item.possible>0);
+  const totalEarned=scored.reduce((sum,item)=>sum+Number(item.earned),0);
+  const totalPossible=scored.reduce((sum,item)=>sum+Number(item.possible),0);
+  let oldCategoryAverage=category.average===null||category.average===undefined?null:Number(category.average);
+  if(totalPossible>0){
+    const pointsAverage=(totalEarned/totalPossible)*100;
+    if(oldCategoryAverage!==null&&Math.abs(pointsAverage-oldCategoryAverage)>2){showPredictError("Genesis category average does not match the assignment points GradeUp can read, so a reliable prediction is not available for this category.");return;}
+    if(oldCategoryAverage===null)oldCategoryAverage=pointsAverage;
+  }else if(sameCategory.length>0){
+    showPredictError('This category has assignments without readable point totals. GradeUp cannot safely estimate how another assignment would change its average.');return;
+  }
+  const newCategoryAverage=totalPossible>0?((totalEarned+earned)/(totalPossible+possible))*100:(earned/possible)*100;
+  const availableCategories=(data.categories||[]).filter(item=>Number(item.weight)>0&&(item.average!==null&&item.average!==undefined||item.name===category.name&&oldCategoryAverage!==null));
+  const currentWeight=availableCategories.reduce((sum,item)=>sum+Number(item.weight),0);
+  if(currentWeight<=0){showPredictError('There is not enough category information to calculate a course-grade estimate.');return;}
+  const officialGrade=data.grade!==null&&data.grade!==undefined&&Number.isFinite(Number(data.grade))?Number(data.grade):null;
+  let currentGrade=officialGrade;
+  if(currentGrade===null){
+    const total=availableCategories.reduce((sum,item)=>{const avg=item.name===category.name?oldCategoryAverage:Number(item.average);return sum+avg*Number(item.weight);},0);
+    currentGrade=total/currentWeight;
+  }
+  let predictedGrade;
+  if(oldCategoryAverage===null){
+    predictedGrade=(currentGrade*currentWeight+newCategoryAverage*weight)/(currentWeight+weight);
+  }else{
+    predictedGrade=currentGrade+(newCategoryAverage-oldCategoryAverage)*(weight/currentWeight);
+  }
+  predictedGrade=Math.round((predictedGrade+Number.EPSILON)*100)/100;
+  lastPrediction={category:category.name,earned,possible,oldGrade:currentGrade,newGrade:predictedGrade,oldCategoryAverage,newCategoryAverage,letter:letter(predictedGrade)};
+  view();
+}
 function assignmentGrade(assignment){
   if(assignment.earned!==null&&assignment.possible!==null){
     const score=`${fmtNumber(assignment.earned)} / ${fmtNumber(assignment.possible)}`;
@@ -146,13 +222,19 @@ function assignmentGrade(assignment){
 function renderAssignment(assignment){
   return `<div class="assignment row"><div class="grow"><b>${esc(assignment.name)}</b><div class="small">${esc(assignment.due||'')}</div></div><div class="assignment-grade">${esc(assignmentGrade(assignment))}</div></div>`;
 }
+function predictionMarkup(data){
+  const categories=(data.categories||[]).filter(category=>Number(category.weight)>0);
+  const options=categories.map(category=>`<option value="${esc(category.name)}">${esc(category.name)} · ${fmtNumber(category.weight)}% weight</option>`).join('');
+  return `<div class="predict-area"><button type="button" class="predict-toggle" onclick="togglePredict()">${predictorOpen?'Close Predict':'Predict'}</button>${predictorOpen?`<div class="card predict-card"><b>Predict a new assignment</b><p class="small" style="margin:4px 0 0">Try a pretend score to estimate how it could affect this course. All three fields are required.</p><form onsubmit="event.preventDefault();runPrediction()"><div class="predict-grid"><label class="predict-field">Score earned<input id="predictEarned" type="number" min="0" step="any" placeholder="e.g. 89.9" required></label><label class="predict-field">Possible points<input id="predictPossible" type="number" min="0.01" step="any" placeholder="e.g. 100" required></label><label class="predict-field" style="grid-column:1/-1">Category<select id="predictCategory" required><option value="">Choose a category</option>${options}</select></label></div><button type="submit" ${categories.length?'':'disabled'}>Calculate prediction</button></form><div id="predictError" class="status" role="status" aria-live="polite" hidden style="margin-top:10px"></div>${lastPrediction?`<div class="predict-result"><div class="small">Pretend assignment added to ${esc(lastPrediction.category)}</div><div class="grade-change">${fmt(lastPrediction.oldGrade)} → ${fmt(lastPrediction.newGrade)}</div><div><b>Projected course grade: ${fmt(lastPrediction.newGrade)} (${esc(lastPrediction.letter)})</b></div><div class="small" style="margin-top:5px">Pretend score: ${fmtNumber(lastPrediction.earned)} / ${fmtNumber(lastPrediction.possible)} · Updated category average: ${fmt(lastPrediction.newCategoryAverage)}</div></div>`:''}<p class="small predict-help">This is an estimate using the category's Genesis weight and existing scored assignment points. It does not create an actual assignment, change Genesis, or save the prediction.</p></div>`:''}</div>`;
+}
+
 function view(){
   const course=getClass(currentClassId);
   if(!course){home();return;}
   const data=getPeriod(course);
   const grade=data?.grade ?? (S.selectedPeriod==='MP1'?course.summaryGrade:null);
-  let html=`<div class="row" style="justify-content:space-between;align-items:center"><button class="back" onclick="home()">← Grades</button><button class="ghost" onclick="logout()">Log out</button></div>
-    <div class="row" style="justify-content:space-between;align-items:center;margin:9px 0 8px"><div class="grow"><h1>${esc(course.name)}</h1>${course.teacher?`<div class="mut">${esc(course.teacher)}</div>`:''}</div><div class="grade"><strong class="big">${fmt(grade)}</strong>${grade!==null?`<div><span class="pill">${esc(data?.letter||letter(grade))}</span></div>`:''}</div></div>
+  let html=`<div class="row" style="justify-content:space-between;align-items:center"><button class="back" onclick="home()">← Grades</button>${headerActions()}</div>
+    <div class="row" style="justify-content:space-between;align-items:center;margin:9px 0 8px"><div class="grow"><h1>${esc(course.name)}</h1>${course.teacher?`<div class="mut">${esc(course.teacher)}</div>`:''}</div><div class="grade"><strong class="big">${fmt(grade)}</strong>${grade!==null?`<div><span class="pill">${esc(letter(grade))}</span></div>`:''}</div></div>
     <div class="row" style="justify-content:space-between;align-items:end;margin:18px 0 14px"><div><div class="small">Course information</div><b>${esc(periodLabel(S.selectedPeriod))}</b></div>${periodSelector()}</div>`;
 
   if(!data||data.unavailable){
@@ -160,6 +242,7 @@ function view(){
     $('#app').innerHTML=html;return;
   }
 
+  html+=predictionMarkup(data);
   html+=`<div class="small" style="margin:0 0 8px">Grading categories · Read only</div>`;
   if(data.categories?.length){
     data.categories.forEach(category=>{
@@ -210,6 +293,7 @@ async function syncGenesis(){
     }
     S={
       loggedIn:true,
+      account:username,
       classes:result.classes,
       markingPeriods:result.markingPeriods||[],
       selectedPeriod:(result.markingPeriods||[]).some(period=>period.id==='MP1')?'MP1':(result.markingPeriods||[])[0]?.id||'MP1'
