@@ -48,7 +48,7 @@ module.exports = async (req, res) => {
   try {
     const jar = new Jar();
     await go(jar, HOST + '/genesis/sis/view?gohome=true');
-    await go(jar, HOST + '/genesis/sis/j_security_check?parents=Y', {
+    const after = await go(jar, HOST + '/genesis/sis/j_security_check?parents=Y', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -61,9 +61,13 @@ module.exports = async (req, res) => {
         j_password: p
       }).toString()
     });
-    const home = await go(jar, HOST + '/genesis/sis/view?gohome=true');
-    const homeHtml = await home.text();
-    const m = homeHtml.match(/studentid=(\d+)/);
+    let homeHtml = await after.text();
+    let m = homeHtml.match(/studentid=(\d+)/);
+    if (!m) {
+      const home = await go(jar, HOST + '/genesis/parents');
+      homeHtml = await home.text();
+      m = homeHtml.match(/studentid=(\d+)/);
+    }
     if (!m) {
       return res.status(401).json({
         error: 'Login failed. Check your username and password.',
