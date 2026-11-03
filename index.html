@@ -331,55 +331,68 @@ function gpaRefresh(){const app=$('#app');if(app&&S.loggedIn&&activeTab==='gpa')
 function gradeForActiveCourse(course){
   const val=courseGradeForPeriod(course,S.selectedPeriod);return val===null||val===undefined?null:Number(val);
 }
-function prerequisiteCourseMatches(prereq,activeName){
-  const p=normalizeCourseName(prereq),a=normalizeCourseName(activeName);
-  if(!p||!a)return false;
-  const aliases=[
-    [/\balgebra\s*2\b/g,'algebra 2'],[/\balgebra\s*ii\b/g,'algebra 2'],
-    [/\bhonors\s+us\s+history\b/g,'us history'],[/\bus\s+history\b/g,'us history'],
-    [/\bamerican\s+experiment\b/g,'american experiment'],
-    [/\bworld\s+history\b/g,'world history']
-  ];
-  const norm=x=>{let v=normalizeCourseName(x);for(const [re,to] of aliases)v=v.replace(re,to);return v.replace(/\s+/g,' ').trim();};
-  const aa=norm(activeName),pp=norm(prereq);
-  if(aa===pp||aa.includes(pp)||pp.includes(aa))return Math.min(aa.length,pp.length)/Math.max(aa.length,pp.length)>.48;
-  const tokens=pp.split(' ').filter(x=>x.length>2),activeTokens=new Set(aa.split(' ').filter(x=>x.length>2));
-  const common=tokens.filter(x=>activeTokens.has(x)).length;
-  return tokens.length>0&&common/Math.max(tokens.length,activeTokens.size)>=.6;
+function prereqCourseKey(value){
+  let s=String(value||'').toLowerCase();
+  s=s.replace(/\b(ap|honors?|advanced|academic)\b/g,' $1 ')
+    .replace(/\b(ii|iii|iv|v|i)\b/g,t=>({i:'1',ii:'2',iii:'3',iv:'4',v:'5'}[t]||t))
+    .replace(/[^a-z0-9]+/g,' ').trim().replace(/\s+/g,' ');
+  // Common catalog abbreviations and Genesis naming variations.
+  s=s.replace(/\badv algebra\b/g,'advanced algebra').replace(/\baa2\b/g,'advanced algebra 2')
+    .replace(/\bha2\b/g,'honors algebra 2').replace(/\balgebra 2\b/g,'algebra 2')
+    .replace(/\bus history honors\b/g,'honors us history').replace(/\bus history ap\b/g,'ap us history')
+    .replace(/\bapush\b/g,'ap us history');
+  return s;
 }
-function prerequisiteRules(item){
-  const p=String(item.prereq||'');
-  // Explicit course-name/threshold rules for catalog phrasing that is ambiguous when split by OR.
-  if(item.code==='H12047')return [{name:'Honors US History',threshold:93},{name:'AP US History',threshold:70}];
-  if(item.name==='Advanced Pre-Calculus')return [{name:'Algebra II',threshold:93},{name:'AA2',threshold:73},{name:'HA2',threshold:65}];
-  const rules=[];
-  const patterns=[/(\d{2,3})\s*%?\s*(?:or better\s*)?in\s+([^,;.]+?)(?=\s+(?:or|and)\s+\d{2,3}\s*%|[,;. ]*$)/ig, /([^,;.]+?)\s*(?:>=|>)\s*(\d{2,3})\s*%?/ig];
-  for(const m of p.matchAll(patterns[0]))rules.push({name:m[2].trim().replace(/\s*\([^)]*\)\s*/g,' ').trim(),threshold:Number(m[1])});
-  for(const m of p.matchAll(patterns[1]))rules.push({name:m[1].trim(),threshold:Number(m[2])});
-  return rules;
+function prerequisiteCourseMatches(prereq,activeName){
+  const p=prereqCourseKey(prereq),a=prereqCourseKey(activeName);
+  if(!p||!a)return false;
+  return p===a;
 }
 function getEligibility(item){
   const next=Number(PREFS.nextGrade);
   if(item.grades.length&&next&&!item.grades.includes(next))return {label:`Not for grade ${next}`,cls:'no',detail:`Catalog lists this course for grade${item.grades.length>1?'s':''} ${item.grades.join(', ')}.`};
   if(item.prereq==='No prerequisites')return {label:'Eligible by catalog rules',cls:'good',detail:'The catalog lists no prerequisite for this course. Grade placement and counselor approval may still apply.'};
-  const rules=prerequisiteRules(item);
-  const evaluations=rules.map(rule=>{
-    const current=S.classes.find(c=>prerequisiteCourseMatches(rule.name,c.name));
-    if(!current)return {...rule,course:null,grade:null};
-    const grade=gradeForActiveCourse(current);
-    return {...rule,course:current,grade};
+
+  // Evaluate each catalog alternative independently so a grade in one course
+  // can never be compared with the threshold belonging to a different course.
+  const clauses=String(item.prereq||'').replace(/\([^)]*\)/g,'').split(/\s+or\s+/i);
+  const parsed=clauses.map(clause=>{
+    const m=clause.match(/(?:>=|>|at least\s*)\s*(\d{1,3})\s*%?|\b(\d{1,3})\s*%\s*(?:or better\s*)?(?:in\s*)?/i);
+    if(!m)return {course:clause.trim(),threshold:null};
+    const threshold=Number(m[1]||m[2]);
+    const course=clause.replace(m[0],' ').replace(/\b(?:or better|or higher|minimum|required)\b/gi,' ').trim();
+    return {course,threshold};
   });
-  const met=evaluations.filter(x=>x.grade!==null&&x.grade>=x.threshold);
-  if(met.length){const r=met[0],margin=Number((r.grade-r.threshold).toFixed(1));return {label:margin===0?'Perfect':'On track',cls:'good',detail:`${r.course.name}: ${fmt(r.grade)} — ${margin===0?'exactly meets':`${margin}% above`} the ${r.threshold}% requirement. ${margin===0?'Perfect!':'Keep working hard!'}`};}
-  const current=evaluations.filter(x=>x.course&&x.grade!==null);
-  if(current.length){
-    const closest=current.sort((a,b)=>(b.grade-b.threshold)-(a.grade-a.threshold))[0];
-    const gap=Number((closest.threshold-closest.grade).toFixed(1));
-    return {label:gap<=1?'Almost there':'Off track',cls:'progress',detail:`Currently taking ${closest.course.name}: ${fmt(closest.grade)}. ${gap}% ${gap===1?'more point':'more points'} needed to reach the ${closest.threshold}% requirement.`};
+  const matched=[];
+  for(const rule of parsed){
+    const c=S.classes.find(x=>prerequisiteCourseMatches(rule.course,x.name));
+    if(c)matched.push({rule,course:c,grade:gradeForActiveCourse(c)});
   }
-  const found=S.classes.filter(c=>rules.some(r=>prerequisiteCourseMatches(r.name,c.name)));
-  if(found.length)return {label:'In progress',cls:'progress',detail:`Currently taking ${found[0].name}, but GradeUp could not read a current marking-period grade for it.`};
-  return {label:'Needs review',cls:'review',detail:'No matching prerequisite course was found in the current Genesis courses. Genesis gradebook sync does not include a complete prior-year transcript, so completed courses from earlier years may need manual confirmation. '+item.prereq};
+  if(matched.length){
+    const passed=matched.find(x=>x.rule.threshold===null || (x.grade!==null&&Math.round(x.grade)>=x.rule.threshold));
+    if(passed){
+      const rounded=passed.grade===null?null:Math.round(passed.grade);
+      const delta=passed.rule.threshold===null?null:rounded-passed.rule.threshold;
+      return {label:'On track',cls:'good',detail:delta===null?`Currently taking ${passed.course.name}; the catalog lists this course as a prerequisite.`:`${passed.course.name}: ${fmt(passed.grade)}% (rounds to ${rounded}%) — meets the ${passed.rule.threshold}% requirement after district rounding. Keep working hard!`};
+    }
+    const closest=matched.sort((a,b)=>(b.grade??-1)-(a.grade??-1))[0];
+    if(closest.grade!==null&&closest.rule.threshold!==null){
+      const rounded=Math.round(closest.grade);
+      const gap=closest.rule.threshold-rounded;
+      return {label:gap<=1?'Almost there':'Off track',cls:'progress',detail:`${closest.course.name}: ${fmt(closest.grade)}% (rounds to ${rounded}%) — ${fmt(gap)} rounded percentage point${gap===1?'':'s'} below the ${closest.rule.threshold}% requirement. ${gap<=1?'Almost there!':`You need ${fmt(gap)} more rounded percentage point${gap===1?'':'s'}.`}`};
+    }
+    return {label:'In progress',cls:'progress',detail:`Currently taking ${matched[0].course.name}; the final course grade must be confirmed.`};
+  }
+
+  // Detect a course in the same subject but at the wrong level. For example,
+  // regular Algebra II does not satisfy Advanced Algebra 2 or Honors Algebra 2.
+  const levelSensitive=parsed.some(r=>/\b(?:advanced|honors|ap)\b/i.test(r.course));
+  if(levelSensitive){
+    const subjectWords=parsed.map(r=>prereqCourseKey(r.course).replace(/\b(?:advanced|honors|ap)\b/g,'').trim());
+    const related=S.classes.find(c=>subjectWords.some(w=>w&&prereqCourseKey(c.name).replace(/\b(?:advanced|honors|ap)\b/g,'').trim()===w));
+    if(related)return {label:'Not eligible by catalog rules',cls:'no',detail:`You're currently taking ${related.name}. The catalog requires ${parsed.map(r=>r.course).join(' or ')}; regular-level ${related.name} does not meet those course-level prerequisites.`};
+  }
+  return {label:'Needs review',cls:'review',detail:item.prereq==='Not specified in catalog'?'The catalog does not provide a clear prerequisite statement.':'GradeUp cannot verify prior completed courses, recommendations, placement, or other conditions from the current Genesis gradebook. '+item.prereq};
 }
 function saveNextYearPrefs(){
   const grade=$('#nextGrade')?.value||'';
