@@ -91,10 +91,20 @@ let predictorOpen=false;
 let lastPrediction=null;
 const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const fmt=value=>value===null||value===undefined||!Number.isFinite(Number(value))?'—':`${Math.round(Number(value)*100)/100}%`;
+const fmtPrediction=value=>value===null||value===undefined||!Number.isFinite(Number(value))?'—':`${(Math.round((Number(value)+Number.EPSILON)*10)/10).toFixed(1)}%`;
 const fmtNumber=value=>value===null||value===undefined||!Number.isFinite(Number(value))?'—':`${Number.isInteger(Number(value))?Number(value):Number(value).toFixed(1)}`;
 const letter=grade=>grade===null||grade===undefined?'':grade>=93?'A':grade>=90?'A-':grade>=87?'B+':grade>=83?'B':grade>=80?'B-':grade>=77?'C+':grade>=73?'C':grade>=70?'C-':grade>=65?'D':'F';
 const getClass=id=>S.classes.find(course=>course.id===id);
 const getPeriod=course=>course?.periods?.[S.selectedPeriod]||null;
+// Genesis computes the course grade from category averages and category weights.
+// The page's headline grade is rounded to a whole percent, so use the weighted
+// category values whenever they are available to preserve the fractional grade.
+function weightedCategoryGrade(data){
+  const categories=(data?.categories||[]).filter(item=>Number.isFinite(Number(item.weight))&&Number(item.weight)>0&&item.average!==null&&item.average!==undefined&&Number.isFinite(Number(item.average)));
+  const totalWeight=categories.reduce((sum,item)=>sum+Number(item.weight),0);
+  if(totalWeight<=0)return null;
+  return categories.reduce((sum,item)=>sum+Number(item.average)*Number(item.weight),0)/totalWeight;
+}
 const periodLabel=id=>S.markingPeriods.find(period=>period.id===id)?.label||`Marking Period ${String(id||'').replace(/^MP/i,'')}`;
 const persist=()=>{try{sessionStorage.setItem(SESSION_KEY,JSON.stringify(S));}catch{}}
 
@@ -146,7 +156,7 @@ function home(){
 
   S.classes.forEach(course=>{
     const data=getPeriod(course);
-    const grade=data?.grade ?? (period==='MP1'?course.summaryGrade:null);
+    const grade=weightedCategoryGrade(data) ?? data?.grade ?? (period==='MP1'?course.summaryGrade:null);
     const assignmentCount=data?.assignments?.length||0;
     const categoryCount=data?.categories?.length||0;
     const secondary=[course.teacher,`${categoryCount} categories`,`${assignmentCount} assignments`].filter(Boolean).join(' · ');
@@ -169,45 +179,49 @@ function runPrediction(){
   const earned=Number(earnedRaw);
   const possible=Number(possibleRaw);
   if(earnedRaw===''||possibleRaw===''||!categoryName){showPredictError('Enter the score, possible points, and category before predicting.');return;}
-  if(!Number.isFinite(earned)||earned<0||!Number.isFinite(possible)||possible<=0){showPredictError('Enter a score of 0 or more and possible points greater than 0.');return;}
+  if(!Number.isFinite(earned)||earned<0||!Number.isFinite(possible)||possible<=0||earned>possible){showPredictError('Enter a score from 0 through the possible points, and possible points greater than 0.');return;}
   const course=getClass(currentClassId);
   const data=getPeriod(course);
   const category=(data?.categories||[]).find(item=>item.name===categoryName);
   if(!course||!data||!category){showPredictError('The selected category is no longer available.');return;}
   const weight=Number(category.weight);
   if(!Number.isFinite(weight)||weight<=0){showPredictError('Genesis has not provided a usable weight for this category.');return;}
+
   const sameCategory=(data.assignments||[]).filter(item=>(item.category||'').trim().toLowerCase()===category.name.trim().toLowerCase());
-  const scored=sameCategory.filter(item=>Number.isFinite(Number(item.earned))&&item.earned!==null&&Number.isFinite(Number(item.possible))&&item.possible>0);
+  // Exempt and absent work does not count. Missing/incomplete work counts as
+  // zero in Genesis, but without its possible points we cannot safely model it.
+  const countedAssignments=sameCategory.filter(item=>!['E','A'].includes(String(item.status||'').toUpperCase()));
+  const scored=countedAssignments.filter(item=>Number.isFinite(Number(item.earned))&&item.earned!==null&&Number.isFinite(Number(item.possible))&&item.possible>0);
+  if(scored.length!==countedAssignments.length){showPredictError('This category has an assignment without readable earned/possible points (such as Missing or Incomplete). GradeUp cannot safely predict this category until Genesis provides those point totals.');return;}
   const totalEarned=scored.reduce((sum,item)=>sum+Number(item.earned),0);
   const totalPossible=scored.reduce((sum,item)=>sum+Number(item.possible),0);
-  let oldCategoryAverage=category.average===null||category.average===undefined?null:Number(category.average);
-  if(totalPossible>0){
+  const oldCategoryAverage=category.average===null||category.average===undefined?null:Number(category.average);
+  if(totalPossible>0&&oldCategoryAverage!==null){
     const pointsAverage=(totalEarned/totalPossible)*100;
-    if(oldCategoryAverage!==null&&Math.abs(pointsAverage-oldCategoryAverage)>2){showPredictError("Genesis category average does not match the assignment points GradeUp can read, so a reliable prediction is not available for this category.");return;}
-    if(oldCategoryAverage===null)oldCategoryAverage=pointsAverage;
-  }else if(sameCategory.length>0){
-    showPredictError('This category has assignments without readable point totals. GradeUp cannot safely estimate how another assignment would change its average.');return;
+    // Genesis displays category averages to one decimal place. A larger gap
+    // means the visible assignments do not fully explain its category grade.
+    if(Math.abs(pointsAverage-oldCategoryAverage)>0.15){showPredictError('Genesis’s category average does not match the readable assignment point totals, so a reliable prediction is not available for this category.');return;}
   }
+  if(totalPossible===0&&countedAssignments.length>0){showPredictError('This category has assignments without readable point totals. GradeUp cannot safely estimate another assignment here.');return;}
+
   const newCategoryAverage=totalPossible>0?((totalEarned+earned)/(totalPossible+possible))*100:(earned/possible)*100;
-  const availableCategories=(data.categories||[]).filter(item=>Number(item.weight)>0&&(item.average!==null&&item.average!==undefined||item.name===category.name&&oldCategoryAverage!==null));
-  const currentWeight=availableCategories.reduce((sum,item)=>sum+Number(item.weight),0);
-  if(currentWeight<=0){showPredictError('There is not enough category information to calculate a course-grade estimate.');return;}
-  const officialGrade=data.grade!==null&&data.grade!==undefined&&Number.isFinite(Number(data.grade))?Number(data.grade):null;
-  let currentGrade=officialGrade;
-  if(currentGrade===null){
-    const total=availableCategories.reduce((sum,item)=>{const avg=item.name===category.name?oldCategoryAverage:Number(item.average);return sum+avg*Number(item.weight);},0);
-    currentGrade=total/currentWeight;
-  }
-  let predictedGrade;
-  if(oldCategoryAverage===null){
-    predictedGrade=(currentGrade*currentWeight+newCategoryAverage*weight)/(currentWeight+weight);
-  }else{
-    predictedGrade=currentGrade+(newCategoryAverage-oldCategoryAverage)*(weight/currentWeight);
-  }
-  predictedGrade=Math.round((predictedGrade+Number.EPSILON)*100)/100;
-  lastPrediction={category:category.name,earned,possible,oldGrade:currentGrade,newGrade:predictedGrade,oldCategoryAverage,newCategoryAverage,letter:letter(predictedGrade)};
+  const gradedCategories=(data.categories||[]).filter(item=>Number(item.weight)>0&&item.average!==null&&item.average!==undefined&&Number.isFinite(Number(item.average)));
+  const currentWeight=gradedCategories.reduce((sum,item)=>sum+Number(item.weight),0);
+  const currentGrade=weightedCategoryGrade(data);
+  if(currentWeight<=0||currentGrade===null){showPredictError('There is not enough category-average information to calculate a course-grade estimate.');return;}
+
+  // Use the precise weighted category grade, not Genesis's rounded whole-number
+  // headline. If this category has no current average, it joins the weighted
+  // grade only after the pretend assignment is added.
+  const categoryWasAlreadyWeighted=oldCategoryAverage!==null;
+  const predictedGrade=categoryWasAlreadyWeighted
+    ? currentGrade+(newCategoryAverage-oldCategoryAverage)*(weight/currentWeight)
+    : (currentGrade*currentWeight+newCategoryAverage*weight)/(currentWeight+weight);
+  const roundedPrediction=Math.round((predictedGrade+Number.EPSILON)*100)/100;
+  lastPrediction={category:category.name,earned,possible,oldGrade:currentGrade,newGrade:roundedPrediction,oldCategoryAverage,newCategoryAverage,letter:letter(roundedPrediction)};
   view();
 }
+
 function assignmentGrade(assignment){
   if(assignment.earned!==null&&assignment.possible!==null){
     const score=`${fmtNumber(assignment.earned)} / ${fmtNumber(assignment.possible)}`;
@@ -225,14 +239,14 @@ function renderAssignment(assignment){
 function predictionMarkup(data){
   const categories=(data.categories||[]).filter(category=>Number(category.weight)>0);
   const options=categories.map(category=>`<option value="${esc(category.name)}">${esc(category.name)} · ${fmtNumber(category.weight)}% weight</option>`).join('');
-  return `<div class="predict-area"><button type="button" class="predict-toggle" onclick="togglePredict()">${predictorOpen?'Close Predict':'Predict'}</button>${predictorOpen?`<div class="card predict-card"><b>Predict a new assignment</b><p class="small" style="margin:4px 0 0">Try a pretend score to estimate how it could affect this course. All three fields are required.</p><form onsubmit="event.preventDefault();runPrediction()"><div class="predict-grid"><label class="predict-field">Score earned<input id="predictEarned" type="number" min="0" step="any" placeholder="e.g. 89.9" required></label><label class="predict-field">Possible points<input id="predictPossible" type="number" min="0.01" step="any" placeholder="e.g. 100" required></label><label class="predict-field" style="grid-column:1/-1">Category<select id="predictCategory" required><option value="">Choose a category</option>${options}</select></label></div><button type="submit" ${categories.length?'':'disabled'}>Calculate prediction</button></form><div id="predictError" class="status" role="status" aria-live="polite" hidden style="margin-top:10px"></div>${lastPrediction?`<div class="predict-result"><div class="small">Pretend assignment added to ${esc(lastPrediction.category)}</div><div class="grade-change">${fmt(lastPrediction.oldGrade)} → ${fmt(lastPrediction.newGrade)}</div><div><b>Projected course grade: ${fmt(lastPrediction.newGrade)} (${esc(lastPrediction.letter)})</b></div><div class="small" style="margin-top:5px">Pretend score: ${fmtNumber(lastPrediction.earned)} / ${fmtNumber(lastPrediction.possible)} · Updated category average: ${fmt(lastPrediction.newCategoryAverage)}</div></div>`:''}<p class="small predict-help">This is an estimate using the category's Genesis weight and existing scored assignment points. It does not create an actual assignment, change Genesis, or save the prediction.</p></div>`:''}</div>`;
+  return `<div class="predict-area"><button type="button" class="predict-toggle" onclick="togglePredict()">${predictorOpen?'Close Predict':'Predict'}</button>${predictorOpen?`<div class="card predict-card"><b>Predict a new assignment</b><p class="small" style="margin:4px 0 0">Try a pretend score to estimate how it could affect this course. All three fields are required.</p><form onsubmit="event.preventDefault();runPrediction()"><div class="predict-grid"><label class="predict-field">Score earned<input id="predictEarned" type="number" min="0" step="any" placeholder="e.g. 89.9" required></label><label class="predict-field">Possible points<input id="predictPossible" type="number" min="0.01" step="any" placeholder="e.g. 100" required></label><label class="predict-field" style="grid-column:1/-1">Category<select id="predictCategory" required><option value="">Choose a category</option>${options}</select></label></div><button type="submit" ${categories.length?'':'disabled'}>Calculate prediction</button></form><div id="predictError" class="status" role="status" aria-live="polite" hidden style="margin-top:10px"></div>${lastPrediction?`<div class="predict-result"><div class="small">Pretend assignment added to ${esc(lastPrediction.category)}</div><div class="grade-change">${fmtPrediction(lastPrediction.oldGrade)} → ${fmtPrediction(lastPrediction.newGrade)}</div><div><b>Projected course grade: ${fmtPrediction(lastPrediction.newGrade)} (${esc(lastPrediction.letter)})</b></div><div class="small" style="margin-top:5px">Pretend score: ${fmtNumber(lastPrediction.earned)} / ${fmtNumber(lastPrediction.possible)} · Updated category average: ${fmt(lastPrediction.newCategoryAverage)}</div></div>`:''}<p class="small predict-help">This is an estimate using the category's Genesis weight and existing scored assignment points. It does not create an actual assignment, change Genesis, or save the prediction.</p></div>`:''}</div>`;
 }
 
 function view(){
   const course=getClass(currentClassId);
   if(!course){home();return;}
   const data=getPeriod(course);
-  const grade=data?.grade ?? (S.selectedPeriod==='MP1'?course.summaryGrade:null);
+  const grade=weightedCategoryGrade(data) ?? data?.grade ?? (S.selectedPeriod==='MP1'?course.summaryGrade:null);
   let html=`<div class="row" style="justify-content:space-between;align-items:center"><button class="back" onclick="home()">← Grades</button>${headerActions()}</div>
     <div class="row" style="justify-content:space-between;align-items:center;margin:9px 0 8px"><div class="grow"><h1>${esc(course.name)}</h1>${course.teacher?`<div class="mut">${esc(course.teacher)}</div>`:''}</div><div class="grade"><strong class="big">${fmt(grade)}</strong>${grade!==null?`<div><span class="pill">${esc(letter(grade))}</span></div>`:''}</div></div>
     <div class="row" style="justify-content:space-between;align-items:end;margin:18px 0 14px"><div><div class="small">Course information</div><b>${esc(periodLabel(S.selectedPeriod))}</b></div>${periodSelector()}</div>`;
