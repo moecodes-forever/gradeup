@@ -180,7 +180,7 @@ async function syncGenesis(){
     const r=await fetch(WORKER_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({u,p})});
     const d=await r.json();
     $('#gp').value='';
-    if(!r.ok){out.innerHTML='<span class="bad">'+esc(d.error||'Something went wrong.')+'</span>';return}
+    if(!r.ok){out.innerHTML='<span class="bad">'+esc(d.error||'Something went wrong.')+'</span>'+(d.debug?'<pre class="mut" style="white-space:pre-wrap;font-size:12px;margin:8px 0 0">'+esc(JSON.stringify(d.debug,null,1))+'</pre>':'');return}
     const text=d.html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi,'').replace(/<[^>]+>/g,'\n').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&');
     found=parseGrades(text);
     out.textContent='';
