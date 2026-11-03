@@ -47,10 +47,18 @@ module.exports = async (req, res) => {
   try {
     const jar = new Jar();
     await go(jar, HOST + '/genesis/sis/view?gohome=true');
-    await go(jar, HOST + '/genesis/sis/j_security_check', {
+    await go(jar, HOST + '/genesis/sis/j_security_check?parents=Y', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ j_username: u, j_password: p }).toString()
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Origin': HOST,
+        'Referer': HOST + '/genesis/sis/view?gohome=true'
+      },
+      body: new URLSearchParams({
+        idTokenString: '',
+        j_username: String(u).trim().toLowerCase(),
+        j_password: p
+      }).toString()
     });
     const home = await go(jar, HOST + '/genesis/sis/view?gohome=true');
     const m = (await home.text()).match(/studentid=(\d+)/);
