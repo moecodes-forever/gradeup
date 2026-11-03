@@ -82,13 +82,12 @@ const find=id=>S.classes.find(c=>c.id===id);
 function home(){
   cur=null;
   let h='<h1>GradeUp</h1><p class="sub">Your classes and where you stand.</p>';
-  if(!S.classes.length)h+='<div class="card empty">No classes yet. Add your first one below.</div>';
+  if(!S.classes.length)h+='<div class="card empty">No classes yet. Sync your grades below.</div>';
   S.classes.forEach(c=>{
     const g=calc(c);
     h+=`<div class="card cls row" onclick="open_('${c.id}')"><div class="grow"><b>${esc(c.name)}</b><div class="mut">${c.teacher?esc(c.teacher)+' · ':''}${c.mode==='weighted'?'Weighted categories':'Total points'} · ${c.items.length} assignments</div></div><div style="text-align:right"><div style="font-size:24px;font-weight:800">${fmt(g)}</div>${g!==null?`<span class="pill">${letter(g)}</span>`:''}</div></div>`;
   });
   h+=`<h2>Import from Genesis</h2><div class="card form"><p class="mut full" style="margin:0">Sign in with your Genesis login and GradeUp grabs your grades for you. Your password is used once to log in and is never saved.</p><input id="gu" autocomplete="username" placeholder="Genesis username"><input id="gp" type="password" autocomplete="current-password" placeholder="Password"><button class="full" onclick="syncGenesis()">Sync my grades</button><div id="gs" class="full"></div></div><div id="pv" class="card" hidden></div>`;
-  h+=`<h2>Add a class</h2><div class="card form"><input class="full" id="cn" placeholder="Class name, e.g. Honors Biology"><select class="full" id="cm"><option value="points">Total points (points earned ÷ points possible)</option><option value="weighted">Weighted categories (tests 40%, homework 20%…)</option></select><button class="full" onclick="addClass()">Add class</button></div>`;
   $('#app').innerHTML=h;
 }
 function addClass(){
