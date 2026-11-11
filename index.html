@@ -534,11 +534,11 @@ button:disabled{background:#28734F !important;color:#fff !important;animation:no
 .login-shell.is-syncing .login-progress{display:flex;animation:status-in .2s ease both}
 .login-progress-box{width:min(360px,100%);padding:30px 26px 27px;border:1px solid #315c45;border-radius:20px;background:#102d20;text-align:center;box-shadow:0 22px 70px rgba(0,0,0,.38)}
 .login-check-wrap{width:76px;height:76px;margin:0 auto 20px;border:3px solid #315c45;border-top-color:#72b58a;border-radius:50%;display:grid;place-items:center;animation:gradeup-spin .9s linear infinite}
-.login-check{font-size:32px;line-height:1;color:#d8f3dc;font-weight:800;transform:rotate(-18deg)}
+.login-check{width:42px;height:42px;display:block;color:#d8f3dc;stroke:currentColor;stroke-width:6;stroke-linecap:round;stroke-linejoin:round;fill:none;filter:drop-shadow(0 1px 1px rgba(0,0,0,.18))}
 .login-progress-title{font-size:17px;font-weight:750;color:#f4f7f5}
 .login-progress-hint{margin-top:8px;font-size:13px;color:#b5c9bb}
 .login-progress.is-success .login-check-wrap{animation:check-success .48s cubic-bezier(.2,.8,.2,1) forwards;border:0;background:#1b6b46;width:100px;height:100px}
-.login-progress.is-success .login-check{font-size:58px;transform:none;animation:check-pop .48s cubic-bezier(.2,.8,.2,1) forwards}
+.login-progress.is-success .login-check{width:62px;height:62px;stroke-width:7;animation:check-pop .48s cubic-bezier(.2,.8,.2,1) forwards}
 .login-progress.is-success .login-progress-title{font-size:18px}
 @keyframes check-success{0%{transform:scale(.78)}65%{transform:scale(1.12)}100%{transform:scale(1)}}
 @keyframes check-pop{0%{opacity:0;transform:scale(.35)}100%{opacity:1;transform:scale(1)}}
@@ -622,7 +622,7 @@ function home(){
     $('#app').innerHTML=`<div class="login-shell"><section class="login-hero"><img class="login-mark" src="/gradeup-logo.png" alt="GradeUp logo"><h1>Know your grades. Plan what comes next.</h1><p class="sub">One clear place to track your South Brunswick classes, understand your progress, and plan next year's courses.</p></section><section class="card login-panel"><h2>Welcome to GradeUp</h2><p class="mut" style="margin:0 0 18px">Sign in with your South Brunswick Genesis account to scan your classes, assignments, category weights, and available marking periods.</p><div class="form"><label class="small" for="gu">Genesis username</label><input id="gu" autocomplete="username" placeholder="Genesis username" aria-label="Genesis username"><label class="small" for="gp">Password</label><input id="gp" type="password" autocomplete="current-password" placeholder="Password" aria-label="Genesis password"><button id="loginButton" onclick="syncGenesis()">Log in and scan grades</button><div id="gs" class="status" role="status" aria-live="polite" hidden></div>
 <div id="loginProgress" class="login-progress" role="status" aria-live="polite" aria-hidden="true">
   <div class="login-progress-box">
-    <div class="login-check-wrap"><span class="login-check" aria-hidden="true">✓</span></div>
+    <div class="login-check-wrap"><svg class="login-check" viewBox="0 0 48 48" aria-hidden="true" focusable="false"><path d="M10 25.5 20 35 39 13"/></svg></div>
     <div class="login-progress-title" id="loginProgressText">Connecting to Genesis…</div>
     <div class="login-progress-hint">GradeUp is securely retrieving your classes and grades.</div>
   </div>
