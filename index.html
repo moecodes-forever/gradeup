@@ -451,6 +451,98 @@ input,select { background:#0E2E20 !important; color:#F4F7F5 !important; border-c
   .login-shell.is-syncing .login-hero::before { animation:none !important; }
 }
 
+
+
+/* GradeUp: darker, calmer desktop polish. CSS-only overrides; functional JS is untouched. */
+:root{
+  --bg:#071C14 !important;
+  --card:#102D20 !important;
+  --tx:#E8F1EB !important;
+  --mut:#A9BCAF !important;
+  --ac:#28734F !important;
+  --acl:#C1DCC9 !important;
+  --bd:#244A37 !important;
+}
+html,body,#app,main{background:#071C14 !important;color:#E8F1EB !important}
+body{background-image:none !important}
+main{width:min(100% - 40px,1180px) !important;max-width:1180px !important;padding:18px 0 28px !important}
+.card,.login-panel,.gpa-card,.category,.catalog-item,.top-nav,
+.account-dropdown summary,.account-menu,.catalog-results,.login-progress,.predict-result{
+  background:#102D20 !important;border-color:#244A37 !important;box-shadow:none !important
+}
+.login-hero{background:#102D20 !important;border-color:#244A37 !important}
+.login-panel{background:#102D20 !important}
+input,select{background:#091F16 !important;color:#E8F1EB !important;border-color:#315640 !important}
+input::placeholder{color:#91A99A !important}
+button,#loginButton{background:#28734F !important;color:#fff !important;box-shadow:none !important}
+button:hover:not(:disabled),#loginButton:hover:not(:disabled){background:#32845D !important}
+button:disabled{background:#28734F !important;color:#fff !important;animation:none !important}
+.login-progress{background:#091F16 !important}
+.login-progress-track{background:#244A37 !important}
+.login-progress-bar{background:#8FB69B !important;animation:none !important}
+.top-nav button.active{background:#C1DCC9 !important;color:#123B27 !important}
+.pill,.login-point span:first-child,.account-avatar{background:#C1DCC9 !important;color:#123B27 !important}
+
+/* Header: level the brand mark and remove the motto beneath the wordmark. */
+.header-row{align-items:center !important;min-height:48px}
+.brand-mark{display:flex !important;align-items:center !important;gap:12px !important}
+.brand-icon{width:42px !important;height:42px !important;object-fit:contain !important;align-self:center !important}
+.brand-mark h1{line-height:1 !important;margin:0 !important}
+.brand-mark .sub{display:none !important}
+
+/* Course-weight controls: give the AP label enough room and keep it on one line. */
+.gpa-course{grid-template-columns:minmax(0,1fr) 180px 112px !important;gap:12px !important}
+.gpa-course select{width:100%;min-width:0;white-space:nowrap}
+.gpa-course .credit-label{white-space:nowrap;overflow:visible;line-height:1.2}
+
+/* Desktop login: fit the available browser viewport instead of forcing page scroll. */
+.login-shell{
+  width:100% !important;
+  max-width:1120px !important;
+  min-height:min(680px,calc(100svh - 112px)) !important;
+  height:min(680px,calc(100svh - 112px)) !important;
+  margin:12px auto 0 !important;
+  grid-template-columns:minmax(0,1fr) minmax(0,0.92fr) !important;
+  gap:18px !important;
+}
+.login-hero,.login-panel{min-height:0 !important;height:100% !important}
+.login-hero{padding:clamp(26px,3.2vw,44px) !important;padding-right:clamp(210px,27%,300px) !important}
+.login-hero h1{font-size:clamp(34px,4vw,50px) !important;line-height:1.04 !important}
+.login-panel{padding:clamp(22px,3vw,36px) !important}
+.login-hero::before{width:min(39%,330px) !important;height:260px !important;right:12px !important}
+@media(max-width:900px){
+  main{width:min(100% - 32px,760px) !important;padding:16px 0 28px !important}
+  .login-shell{height:auto !important;min-height:0 !important;grid-template-columns:1fr !important}
+  .login-hero,.login-panel{height:auto !important}
+  .login-hero{min-height:440px !important;padding:28px !important;padding-right:220px !important}
+  .login-panel{min-height:420px !important}
+}
+@media(max-width:600px){
+  main{width:calc(100% - 24px) !important}
+  .gpa-course{grid-template-columns:minmax(0,1fr) 145px !important}
+  .gpa-course .credit-label{display:none !important}
+  .login-hero{min-height:570px !important;padding:24px !important;padding-bottom:220px !important}
+  .login-hero::before{width:min(88%,320px) !important;height:205px !important;right:50% !important;top:auto !important;bottom:8px !important;transform:translateX(50%) !important}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{scroll-behavior:auto !important;animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important}
+}
+
+
+/* Focused sign-in overlay: a rotating check ring becomes a large success check. */
+.login-progress{display:none;position:fixed;inset:0;z-index:9999;margin:0;padding:22px;align-items:center;justify-content:center;background:rgba(3,15,10,.78);backdrop-filter:blur(7px);}
+.login-shell.is-syncing .login-progress{display:flex;animation:status-in .2s ease both}
+.login-progress-box{width:min(360px,100%);padding:30px 26px 27px;border:1px solid #315c45;border-radius:20px;background:#102d20;text-align:center;box-shadow:0 22px 70px rgba(0,0,0,.38)}
+.login-check-wrap{width:76px;height:76px;margin:0 auto 20px;border:3px solid #315c45;border-top-color:#72b58a;border-radius:50%;display:grid;place-items:center;animation:gradeup-spin .9s linear infinite}
+.login-check{font-size:32px;line-height:1;color:#d8f3dc;font-weight:800;transform:rotate(-18deg)}
+.login-progress-title{font-size:17px;font-weight:750;color:#f4f7f5}
+.login-progress-hint{margin-top:8px;font-size:13px;color:#b5c9bb}
+.login-progress.is-success .login-check-wrap{animation:check-success .48s cubic-bezier(.2,.8,.2,1) forwards;border:0;background:#1b6b46;width:100px;height:100px}
+.login-progress.is-success .login-check{font-size:58px;transform:none;animation:check-pop .48s cubic-bezier(.2,.8,.2,1) forwards}
+.login-progress.is-success .login-progress-title{font-size:18px}
+@keyframes check-success{0%{transform:scale(.78)}65%{transform:scale(1.12)}100%{transform:scale(1)}}
+@keyframes check-pop{0%{opacity:0;transform:scale(.35)}100%{opacity:1;transform:scale(1)}}
+@media(prefers-reduced-motion:reduce){.login-check-wrap{animation:none}.login-progress.is-success .login-check-wrap,.login-progress.is-success .login-check{animation:none}}
 </style>
 </head>
 <body>
@@ -511,7 +603,7 @@ function logout(){
   // Grade data remains session-only. Course preferences are stored separately
   // in this browser so a student can edit them again after signing back in.
   try{sessionStorage.removeItem(SESSION_KEY);}catch{}
-  S=emptyState();currentClassId=null;PREFS={nextGrade:'',selected:[],courseWeights:{},setupComplete:false};activeTab='home';home();
+  S=emptyState();currentClassId=null;PREFS={nextGrade:'',selected:[],courseWeights:{},setupComplete:false};activeTab='home';location.reload();
 }
 function headerActions(){
   const account=S.account||'Account unavailable';
@@ -527,11 +619,13 @@ function editPreferences(){activeTab='goals';currentClassId=null;PREFS.setupComp
 function home(){
   currentClassId=null;predictorOpen=false;lastPrediction=null;
   if(!S.loggedIn){
-    $('#app').innerHTML=`<div class="login-shell"><section class="login-hero"><img class="login-mark" src="/gradeup-logo.png" alt="GradeUp logo"><h1>Know your grades. Plan what comes next.</h1><p class="sub">One clear place to track your South Brunswick classes, understand your progress, and plan next year's courses.</p><div class="login-points"><div class="login-point"><span>✓</span><span>See your Genesis grades and assignments together</span></div><div class="login-point"><span>✓</span><span>Explore SBHS courses and their prerequisites</span></div><div class="login-point"><span>✓</span><span>Estimate weighted and unweighted GPA</span></div></div></section><section class="card login-panel"><h2>Welcome to GradeUp</h2><p class="mut" style="margin:0 0 18px">Sign in with your South Brunswick Genesis account to scan your classes, assignments, category weights, and available marking periods.</p><div class="form"><label class="small" for="gu">Genesis username</label><input id="gu" autocomplete="username" placeholder="Genesis username" aria-label="Genesis username"><label class="small" for="gp">Password</label><input id="gp" type="password" autocomplete="current-password" placeholder="Password" aria-label="Genesis password"><button id="loginButton" onclick="syncGenesis()">Log in and scan grades</button><div id="gs" class="status" role="status" aria-live="polite" hidden></div>
-<div id="loginProgress" class="login-progress" role="status" aria-live="polite">
-  <div class="login-progress-top"><span class="login-spinner" aria-hidden="true"></span><span id="loginProgressText">Connecting to Genesis…</span></div>
-  <div class="login-progress-track" aria-hidden="true"><div class="login-progress-bar"></div></div>
-  <div class="login-progress-hint">GradeUp is securely retrieving your classes and grades. This can take a few moments.</div>
+    $('#app').innerHTML=`<div class="login-shell"><section class="login-hero"><img class="login-mark" src="/gradeup-logo.png" alt="GradeUp logo"><h1>Know your grades. Plan what comes next.</h1><p class="sub">One clear place to track your South Brunswick classes, understand your progress, and plan next year's courses.</p></section><section class="card login-panel"><h2>Welcome to GradeUp</h2><p class="mut" style="margin:0 0 18px">Sign in with your South Brunswick Genesis account to scan your classes, assignments, category weights, and available marking periods.</p><div class="form"><label class="small" for="gu">Genesis username</label><input id="gu" autocomplete="username" placeholder="Genesis username" aria-label="Genesis username"><label class="small" for="gp">Password</label><input id="gp" type="password" autocomplete="current-password" placeholder="Password" aria-label="Genesis password"><button id="loginButton" onclick="syncGenesis()">Log in and scan grades</button><div id="gs" class="status" role="status" aria-live="polite" hidden></div>
+<div id="loginProgress" class="login-progress" role="status" aria-live="polite" aria-hidden="true">
+  <div class="login-progress-box">
+    <div class="login-check-wrap"><span class="login-check" aria-hidden="true">✓</span></div>
+    <div class="login-progress-title" id="loginProgressText">Connecting to Genesis…</div>
+    <div class="login-progress-hint">GradeUp is securely retrieving your classes and grades.</div>
+  </div>
 </div></div><p class="small" style="margin:17px 0 0">Your password is sent to the GradeUp server for this login attempt only. GradeUp does not save your password or Genesis session cookies. Use this only with district authorization.</p></section></div>`;
     return;
   }
@@ -930,6 +1024,7 @@ async function syncGenesis(){
   }
   panel?.classList.remove('login-error');
   shell?.classList.add('is-syncing');
+  $('#loginProgress')?.setAttribute('aria-hidden','false');
   output.hidden=true;
   button.disabled=true;
   button.innerHTML='<span class="login-button-spinner" aria-hidden="true"></span> Connecting…';
@@ -954,12 +1049,14 @@ async function syncGenesis(){
       return;
     }
     if(progressText)progressText.textContent='Your GradeUp dashboard is ready!';
-    const successLine=document.querySelector('.login-progress-hint');
-    if(successLine)successLine.textContent='Sync complete. Opening your dashboard…';
-    const spinner=document.querySelector('.login-spinner');
-    if(spinner){spinner.style.animation='none';spinner.style.border='0';spinner.style.background='var(--acl)';spinner.style.display='grid';spinner.style.placeItems='center';spinner.style.color='var(--ac)';spinner.style.fontWeight='900';spinner.textContent='✓';}
-    const progressBar=document.querySelector('.login-progress-bar');
-    if(progressBar){progressBar.style.animation='none';progressBar.style.width='100%';}
+    const progressOverlay=$('#loginProgress');
+    if(progressOverlay){
+      progressOverlay.classList.add('is-success');
+      progressOverlay.setAttribute('aria-hidden','false');
+      const successHint=progressOverlay.querySelector('.login-progress-hint');
+      if(successHint)successHint.textContent='Your dashboard is ready. Opening GradeUp…';
+    }
+    if(progressText)progressText.textContent='Signed in successfully';
     S={
       loggedIn:true,
       account:username,
@@ -968,10 +1065,11 @@ async function syncGenesis(){
       selectedPeriod:(result.markingPeriods||[]).some(period=>period.id==='MP1')?'MP1':(result.markingPeriods||[])[0]?.id||'MP1'
     };
     PREFS=loadPreferences(username);
-    activeTab=PREFS.setupComplete?'home':'goals';
+    activeTab='home';
     persist();
-    await new Promise(resolve=>setTimeout(resolve,450));
-    home();
+    try{sessionStorage.setItem('gradeup_open_home_after_login','1');}catch{}
+    await new Promise(resolve=>setTimeout(resolve,850));
+    location.reload();
   }catch{
     $('#gp').value='';
     shell?.classList.remove('is-syncing');
@@ -983,7 +1081,7 @@ async function syncGenesis(){
   }
 }
 
-if(S.loggedIn){PREFS=loadPreferences(S.account);activeTab=PREFS.setupComplete?'home':'goals';}
+if(S.loggedIn){PREFS=loadPreferences(S.account);let openHome=false;try{openHome=sessionStorage.getItem('gradeup_open_home_after_login')==='1';if(openHome)sessionStorage.removeItem('gradeup_open_home_after_login');}catch{}activeTab=openHome||PREFS.setupComplete?'home':'goals';}
 home();
 </script>
 </body>
