@@ -544,6 +544,13 @@ button:disabled{background:#28734F !important;color:#fff !important;animation:no
 @keyframes check-success{0%{transform:scale(.72) rotate(0deg)}65%{transform:scale(1.16) rotate(0deg)}100%{transform:scale(1) rotate(0deg)}}
 @keyframes check-pop{0%{opacity:0;transform:scale(.35)}100%{opacity:1;transform:scale(1)}}
 @media(prefers-reduced-motion:reduce){.login-check-wrap:not(.login-progress.is-success .login-check-wrap){animation:gradeup-check-spin 1.4s linear infinite !important;animation-duration:1.4s !important;animation-iteration-count:infinite !important}.login-progress.is-success .login-check-wrap{animation:check-success .48s cubic-bezier(.2,.8,.2,1) forwards !important;animation-duration:.48s !important;animation-iteration-count:1 !important}.login-progress.is-success .login-check{animation:check-pop .48s cubic-bezier(.2,.8,.2,1) forwards !important;animation-duration:.48s !important;animation-iteration-count:1 !important}}
+.gpa-audit{margin:12px 0 18px;padding:13px 15px;border:1px solid var(--bd);border-radius:12px;background:var(--card)}
+.gpa-audit summary{cursor:pointer;font-weight:700}
+.gpa-audit-list{margin-top:9px}
+.gpa-audit-row{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding:9px 0;border-top:1px solid var(--bd);font-size:13px}
+.gpa-audit-row span{text-align:right;color:var(--mut)}
+@media(max-width:600px){.gpa-audit-row{display:grid;gap:3px}.gpa-audit-row span{text-align:left}}
+
 </style>
 </head>
 <body>
@@ -717,17 +724,46 @@ function pointsForGrade(percent,weightType){
   if(Number(percent)>=70){if(weightType==='honors')points+=.5;else if(weightType==='ap')points+=1;}
   return points;
 }
+function hasPostedGradeEvidence(data){
+  if(!data)return false;
+  // A zero is a real F only when Genesis shows graded work behind it.
+  const assignments=Array.isArray(data.assignments)?data.assignments:[];
+  const hasScoredAssignment=assignments.some(a=>{
+    const earned=a?.earned,possible=a?.possible;
+    const earnedPresent=earned!==null&&earned!==undefined&&String(earned).trim()!=='';
+    const possiblePresent=possible!==null&&possible!==undefined&&String(possible).trim()!=='';
+    return earnedPresent&&possiblePresent&&Number.isFinite(Number(earned))&&Number.isFinite(Number(possible))&&Number(possible)>0;
+  });
+  const hasCountedStatus=assignments.some(a=>['M','I'].includes(String(a?.status||'').trim().toUpperCase()));
+  const categories=Array.isArray(data.categories)?data.categories:[];
+  const hasPositiveCategory=categories.some(c=>{
+    const avg=finiteGrade(c?.average);
+    return avg!==null&&avg>0;
+  });
+  return hasScoredAssignment||hasCountedStatus||hasPositiveCategory;
+}
 function courseGradeForPeriod(course,periodId){
   if(!courseApplicablePeriods(course).includes(periodId))return null;
   const data=course?.periods?.[periodId];
-  // Use posted category averages or a posted MP grade. Empty strings and
-  // "No Grades" are missing; they must never be coerced to a 0% grade.
+  const hasEvidence=hasPostedGradeEvidence(data);
+
+  // Genesis may show 0% as a placeholder for an empty category table.
+  // Do not treat that as a posted F unless assignments/categories prove work exists.
   const categoryGrade=weightedCategoryGrade(data);
-  if(categoryGrade!==null)return categoryGrade;
+  if(categoryGrade!==null&&(categoryGrade>0||hasEvidence))return categoryGrade;
+
   const periodGrade=finiteGrade(data?.grade);
-  if(periodGrade!==null)return periodGrade;
+  if(periodGrade!==null&&(periodGrade>0||hasEvidence))return periodGrade;
+
+  // Genesis Grade Summary is the authoritative current course-level MP1 grade.
+  // Use it when the course-summary table only contains empty/zero placeholders.
+  if(periodId==='MP1'){
+    const summaryGrade=finiteGrade(course?.summaryGrade);
+    if(summaryGrade!==null&&(summaryGrade>0||hasEvidence))return summaryGrade;
+  }
+
   // Legacy cache fallback only when the per-period structure is absent entirely.
-  if(!course?.periods && periodId==='MP1')return finiteGrade(course?.summaryGrade);
+  if(!course?.periods&&periodId==='MP1')return finiteGrade(course?.summaryGrade);
   return null;
 }
 function allPeriodIds(){
@@ -768,6 +804,7 @@ function gpaTab(){
   let html=`<div class="tab-intro"><h1>Full-Year GPA</h1><p>Weighted and unweighted estimates using your grades across the full school year.</p></div>
   <div class="gpa-grid">${gpaCard('Unweighted GPA',year.gpa,`${year.used} courses included · ${year.credits.toFixed(1)} potential credits`)}${gpaCard('Weighted GPA',yearWeighted.gpa,`${yearWeighted.used} courses included · Honors +0.5 / AP +1.0 for grades of C− or better`)}</div>
   <div class="section-note">These are estimates, not official transcript GPAs. GradeUp uses grades from each course’s applicable marking periods${periods.length?` (${periods.join(', ')})`:''}. Courses without posted grades are labeled “No Grades” and are not counted as zero. SBHS students can have up to 8 courses in a marking period; semester/split courses are counted only in the marking periods when they apply. ${fullYearDetail} Credits are matched from the uploaded 2026–27 catalog when possible; otherwise 5.0 credits are assumed.</div>
+  <details class="gpa-audit"><summary>Show GPA calculation by course</summary><div class="gpa-audit-list">${S.classes.map(course=>{const row=year.details.find(x=>x.course.id===course.id);if(!row)return `<div class="gpa-audit-row"><b>${esc(course.name)}</b><span>No Grades · excluded</span></div>`;const unweightedLetter=letter(row.grade);return `<div class="gpa-audit-row"><b>${esc(course.name)}</b><span>${fmt(row.grade)} · ${esc(unweightedLetter)} · ${row.credit.toFixed(1)} credits · ${row.points.toFixed(2)} GPA points</span></div>`;}).join('')}</div><div class="small" style="margin-top:9px">Only courses with at least one posted grade contribute credits or quality points. A 0% is counted only when Genesis shows scored assignments, missing/incomplete work, or a positive category average that confirms the course has graded work.</div></details>
   <h2>Course weighting</h2><p class="mut" style="margin-top:-5px">Choose the level for each course. This changes weighted GPA only.</p><div class="card">${S.classes.map(course=>{const result=courseGradeForYear(course);const status=result.grade===null?'No Grades':result.count<result.total?`${result.count}/${result.total} marking periods graded`:`${fmt(result.grade)}% full-year grade`;return `<div class="gpa-course"><div><b>${esc(course.name)}</b><div class="small">${esc(status)} · ${courseCredits(course).toFixed(1)} potential credits</div></div><select aria-label="${esc(course.name)} course weight" onchange="setCourseWeight('${esc(course.id)}',this.value)"><option value="regular" ${courseWeight(course)==='regular'?'selected':''}>Regular</option><option value="honors" ${courseWeight(course)==='honors'?'selected':''}>Honors</option><option value="ap" ${courseWeight(course)==='ap'?'selected':''}>AP / College-level</option></select></div>`;}).join('')||'<div class="empty">No current courses are available.</div>'}</div>
   <div class="section-note">SBHS adds 0.5 for Honors and 1.0 for AP / College-level grades of C− or better. D and F grades receive no extra weight. Course weighting outside SBHS does not apply under the published policy.</div>`;
   return html;
