@@ -533,14 +533,14 @@ button:disabled{background:#28734F !important;color:#fff !important;animation:no
 .login-progress{display:none;position:fixed;inset:0;z-index:9999;margin:0;padding:22px;align-items:center;justify-content:center;background:rgba(3,15,10,.78);backdrop-filter:blur(7px);}
 .login-shell.is-syncing .login-progress{display:flex;animation:status-in .2s ease both}
 .login-progress-box{width:min(360px,100%);padding:30px 26px 27px;border:1px solid #315c45;border-radius:20px;background:#102d20;text-align:center;box-shadow:0 22px 70px rgba(0,0,0,.38)}
-.login-check-wrap{width:76px;height:76px;margin:0 auto 20px;border:3px solid #315c45;border-top-color:#72b58a;border-right-color:#72b58a;border-radius:50%;display:grid;place-items:center;animation:gradeup-check-spin .82s linear infinite !important;transform-origin:50% 50%;will-change:transform}
+.login-check-wrap{width:76px;height:76px;margin:0 auto 20px;border:3px solid #315c45;border-top-color:#72b58a;border-right-color:#72b58a;border-radius:50%;display:grid;place-items:center;animation:gradeup-check-spin 1.15s linear infinite !important;transform-origin:50% 50%;transform-style:preserve-3d;backface-visibility:visible;will-change:transform}
 .login-check{width:42px;height:42px;display:block;color:#d8f3dc;stroke:currentColor;stroke-width:7;stroke-linecap:round;stroke-linejoin:round;fill:none;filter:drop-shadow(0 1px 1px rgba(0,0,0,.18))}
 .login-progress-title{font-size:17px;font-weight:750;color:#f4f7f5}
 .login-progress-hint{margin-top:8px;font-size:13px;color:#b5c9bb}
 .login-progress.is-success .login-check-wrap{animation:check-success .48s cubic-bezier(.2,.8,.2,1) forwards !important;border:0;background:#1b6b46;width:100px;height:100px}
 .login-progress.is-success .login-check{width:62px;height:62px;stroke-width:7;animation:check-pop .48s cubic-bezier(.2,.8,.2,1) forwards}
 .login-progress.is-success .login-progress-title{font-size:18px}
-@keyframes gradeup-check-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+@keyframes gradeup-check-spin{0%{transform:perspective(420px) rotateY(0deg)}50%{transform:perspective(420px) rotateY(180deg)}100%{transform:perspective(420px) rotateY(360deg)}}
 @keyframes check-success{0%{transform:scale(.72) rotate(0deg)}65%{transform:scale(1.16) rotate(0deg)}100%{transform:scale(1) rotate(0deg)}}
 @keyframes check-pop{0%{opacity:0;transform:scale(.35)}100%{opacity:1;transform:scale(1)}}
 @media(prefers-reduced-motion:reduce){.login-check-wrap:not(.login-progress.is-success .login-check-wrap){animation:gradeup-check-spin 1.4s linear infinite !important;animation-duration:1.4s !important;animation-iteration-count:infinite !important}.login-progress.is-success .login-check-wrap{animation:check-success .48s cubic-bezier(.2,.8,.2,1) forwards !important;animation-duration:.48s !important;animation-iteration-count:1 !important}.login-progress.is-success .login-check{animation:check-pop .48s cubic-bezier(.2,.8,.2,1) forwards !important;animation-duration:.48s !important;animation-iteration-count:1 !important}}
