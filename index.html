@@ -574,14 +574,27 @@ let catalogCategory='All';
 
 const getClass=id=>S.classes.find(course=>course.id===id);
 const getPeriod=course=>course?.periods?.[S.selectedPeriod]||null;
+// Treat a blank / unposted grade as missing, not as 0. JavaScript's Number('')
+// returns 0, which can incorrectly turn a course with "No Grades" into an F.
+// A genuine numeric 0 remains a real grade and is still counted.
+function finiteGrade(value){
+  if(typeof value==='number')return Number.isFinite(value)&&value>=0&&value<=100?value:null;
+  if(typeof value!=='string')return null;
+  const text=value.trim();
+  if(!text||/^(?:—|–|-|n\/?a|no grades?|not graded|ungraded|pending|incomplete)$/i.test(text))return null;
+  const match=text.match(/^(\d{1,3}(?:\.\d+)?)\s*%?$/);
+  if(!match)return null;
+  const grade=Number(match[1]);
+  return Number.isFinite(grade)&&grade>=0&&grade<=100?grade:null;
+}
 // Genesis computes the course grade from category averages and category weights.
-// The page's headline grade is rounded to a whole percent, so use the weighted
-// category values whenever they are available to preserve the fractional grade.
+// Prefer category values when they are genuinely posted; blank averages are ignored.
 function weightedCategoryGrade(data){
-  const categories=(data?.categories||[]).filter(item=>Number.isFinite(Number(item.weight))&&Number(item.weight)>0&&item.average!==null&&item.average!==undefined&&Number.isFinite(Number(item.average)));
-  const totalWeight=categories.reduce((sum,item)=>sum+Number(item.weight),0);
+  const categories=(data?.categories||[]).map(item=>({weight:Number(item.weight),average:finiteGrade(item.average)}))
+    .filter(item=>Number.isFinite(item.weight)&&item.weight>0&&item.average!==null);
+  const totalWeight=categories.reduce((sum,item)=>sum+item.weight,0);
   if(totalWeight<=0)return null;
-  return categories.reduce((sum,item)=>sum+Number(item.average)*Number(item.weight),0)/totalWeight;
+  return categories.reduce((sum,item)=>sum+item.average*item.weight,0)/totalWeight;
 }
 const periodLabel=id=>S.markingPeriods.find(period=>period.id===id)?.label||`Marking Period ${String(id||'').replace(/^MP/i,'')}`;
 const persist=()=>{try{sessionStorage.setItem(SESSION_KEY,JSON.stringify(S));}catch{}}
@@ -707,12 +720,14 @@ function pointsForGrade(percent,weightType){
 function courseGradeForPeriod(course,periodId){
   if(!courseApplicablePeriods(course).includes(periodId))return null;
   const data=course?.periods?.[periodId];
-  // Use the actual marking-period result. summaryGrade is a course-summary fallback,
-  // not proof that the course has a grade in every marking period.
-  const periodGrade=weightedCategoryGrade(data) ?? data?.grade;
-  if(periodGrade!==null&&periodGrade!==undefined&&Number.isFinite(Number(periodGrade)))return Number(periodGrade);
-  // Backward compatibility for older cached data that has no per-period payload at all.
-  if(!course?.periods && periodId==='MP1' && course?.summaryGrade!==null && course?.summaryGrade!==undefined)return Number(course.summaryGrade);
+  // Use posted category averages or a posted MP grade. Empty strings and
+  // "No Grades" are missing; they must never be coerced to a 0% grade.
+  const categoryGrade=weightedCategoryGrade(data);
+  if(categoryGrade!==null)return categoryGrade;
+  const periodGrade=finiteGrade(data?.grade);
+  if(periodGrade!==null)return periodGrade;
+  // Legacy cache fallback only when the per-period structure is absent entirely.
+  if(!course?.periods && periodId==='MP1')return finiteGrade(course?.summaryGrade);
   return null;
 }
 function allPeriodIds(){
@@ -721,7 +736,9 @@ function allPeriodIds(){
 }
 function courseGradeForYear(course){
   const ids=allPeriodIds().filter(id=>courseApplicablePeriods(course).includes(id));
-  const vals=ids.map(id=>courseGradeForPeriod(course,id)).filter(v=>v!==null&&v!==undefined&&Number.isFinite(Number(v))).map(Number);
+  // Average only the marking periods with an actual posted grade. A blank MP
+  // does not count as zero, and a course with no posted grade is excluded.
+  const vals=ids.map(id=>courseGradeForPeriod(course,id)).filter(v=>v!==null);
   return {grade:vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:null,count:vals.length,total:ids.length};
 }
 function calculateGpa(mode,weighted=false){
@@ -742,16 +759,17 @@ function calculateGpa(mode,weighted=false){
 function gpaCard(label,value,detail){return `<div class="gpa-card"><div class="small">${esc(label)}</div><div class="gpa-value">${value===null?'—':Number(value).toFixed(3)}</div><div class="small">${esc(detail)}</div></div>`;}
 function weightLabel(value){return value==='ap'?'AP / College-level':value==='honors'?'Honors':'Regular';}
 function gpaTab(){
-  const selected=calculateGpa('selected',false),selectedWeighted=calculateGpa('selected',true);
-  const year=calculateGpa('year',false),yearWeighted=calculateGpa('year',true);
+  const year=calculateGpa('year',false);
+  const yearWeighted=calculateGpa('year',true);
   const periods=allPeriodIds();
-  let html=`<div class="tab-intro"><h1>Current GPA</h1><p>Weighted and unweighted estimates based on your Genesis grades and SBHS's GPA scale.</p></div>
-  <div class="row" style="justify-content:space-between;align-items:end;margin:14px 0 8px"><div><div class="small">Selected marking period</div><b>${esc(periodLabel(S.selectedPeriod))}</b></div>${periodSelector()}</div>
-  <h2 style="margin-top:16px">Selected Marking Period GPA</h2><div class="gpa-grid">${gpaCard('Unweighted GPA',selected.gpa,`${selected.used} courses included · ${selected.credits.toFixed(1)} potential credits`)}${gpaCard('Weighted GPA',selectedWeighted.gpa,`${selectedWeighted.used} courses included · Honors +0.5 / AP +1.0 when grade is C− or better`)}</div>
-  <h2>Full-Year GPA</h2><div class="gpa-grid">${gpaCard('Unweighted GPA',year.gpa,`${year.used} courses included · MP grades combined`)}${gpaCard('Weighted GPA',yearWeighted.gpa,`${yearWeighted.used} courses included · based on each course's selected level`)}</div>
-  <div class="section-note">These are estimates, not official transcript GPAs. SBHS's published calculation uses final course grades and potential credits. GradeUp combines available marking-period grades for an estimate; ${year.missing?`${year.missing} course(s) have no readable grades and are not included. `:''}${year.partial?`${year.partial} course(s) have only some marking periods posted and use the available periods. `:'All included courses have grades for each available marking period. '}Full-year grades use the average of available marking periods${periods.length?` (${periods.join(', ')})`:''}. Credits are matched from the uploaded 2026–27 catalog when possible; otherwise 5.0 credits are assumed.</div>
-  <h2>Course weighting</h2><p class="mut" style="margin-top:-5px">Choose the level for each course you're currently taking. This changes weighted GPA only.</p><div class="card">${S.classes.map(course=>`<div class="gpa-course"><div><b>${esc(course.name)}</b><div class="small">${courseCredits(course).toFixed(1)} potential credits</div></div><select aria-label="${esc(course.name)} course weight" onchange="setCourseWeight('${esc(course.id)}',this.value)"><option value="regular" ${courseWeight(course)==='regular'?'selected':''}>Regular</option><option value="honors" ${courseWeight(course)==='honors'?'selected':''}>Honors</option><option value="ap" ${courseWeight(course)==='ap'?'selected':''}>AP / College-level</option></select><div class="small credit-label">${esc(weightLabel(courseWeight(course)))}</div></div>`).join('')||'<div class="empty">No current courses are available.</div>'}</div>
-  <div class="section-note">SBHS adds 0.5 for Honors and 1.0 for AP/College-level grades of C− or better. D and F grades receive no extra weight. Course weighting outside SBHS does not apply under the published policy.</div>`;
+  const fullYearDetail=year.partial
+    ? `${year.partial} course(s) have only some applicable marking periods graded; available grades are used.`
+    : 'Grades are combined across each course’s applicable marking periods.';
+  let html=`<div class="tab-intro"><h1>Full-Year GPA</h1><p>Weighted and unweighted estimates using your grades across the full school year.</p></div>
+  <div class="gpa-grid">${gpaCard('Unweighted GPA',year.gpa,`${year.used} courses included · ${year.credits.toFixed(1)} potential credits`)}${gpaCard('Weighted GPA',yearWeighted.gpa,`${yearWeighted.used} courses included · Honors +0.5 / AP +1.0 for grades of C− or better`)}</div>
+  <div class="section-note">These are estimates, not official transcript GPAs. GradeUp uses grades from each course’s applicable marking periods${periods.length?` (${periods.join(', ')})`:''}. Courses without posted grades are labeled “No Grades” and are not counted as zero. SBHS students can have up to 8 courses in a marking period; semester/split courses are counted only in the marking periods when they apply. ${fullYearDetail} Credits are matched from the uploaded 2026–27 catalog when possible; otherwise 5.0 credits are assumed.</div>
+  <h2>Course weighting</h2><p class="mut" style="margin-top:-5px">Choose the level for each course. This changes weighted GPA only.</p><div class="card">${S.classes.map(course=>{const result=courseGradeForYear(course);const status=result.grade===null?'No Grades':result.count<result.total?`${result.count}/${result.total} marking periods graded`:`${fmt(result.grade)}% full-year grade`;return `<div class="gpa-course"><div><b>${esc(course.name)}</b><div class="small">${esc(status)} · ${courseCredits(course).toFixed(1)} potential credits</div></div><select aria-label="${esc(course.name)} course weight" onchange="setCourseWeight('${esc(course.id)}',this.value)"><option value="regular" ${courseWeight(course)==='regular'?'selected':''}>Regular</option><option value="honors" ${courseWeight(course)==='honors'?'selected':''}>Honors</option><option value="ap" ${courseWeight(course)==='ap'?'selected':''}>AP / College-level</option></select></div>`;}).join('')||'<div class="empty">No current courses are available.</div>'}</div>
+  <div class="section-note">SBHS adds 0.5 for Honors and 1.0 for AP / College-level grades of C− or better. D and F grades receive no extra weight. Course weighting outside SBHS does not apply under the published policy.</div>`;
   return html;
 }
 function calculateWeighted(details){
@@ -1087,3 +1105,8 @@ home();
 </script>
 </body>
 </html>
+<style>
+/* GPA course rows use one selector only; the selected level is shown in the dropdown. */
+.gpa-course{grid-template-columns:minmax(0,1fr) minmax(165px,220px)!important;gap:12px!important}
+@media(max-width:600px){.gpa-course{grid-template-columns:minmax(0,1fr) 145px!important}}
+</style>
