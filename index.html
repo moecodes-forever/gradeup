@@ -551,6 +551,17 @@ button:disabled{background:#28734F !important;color:#fff !important;animation:no
 .gpa-audit-row span{text-align:right;color:var(--mut)}
 @media(max-width:600px){.gpa-audit-row{display:grid;gap:3px}.gpa-audit-row span{text-align:left}}
 
+
+.history-details{border:1px solid var(--bd);border-radius:12px;padding:12px;background:var(--bg)}
+.history-details summary{cursor:pointer;font-weight:700}
+.history-list{margin-top:12px;display:grid;gap:12px}
+.history-year{padding-top:10px;border-top:1px solid var(--bd)}
+.history-year:first-child{border-top:0;padding-top:0}
+.history-year>b{display:block;margin-bottom:6px}
+.history-course{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-top:1px solid color-mix(in srgb,var(--bd) 65%,transparent);font-size:13px}
+.history-course>span:last-child{text-align:right;white-space:nowrap}
+@media(max-width:560px){.history-course{flex-direction:column;gap:2px}.history-course>span:last-child{text-align:left}}
+
 </style>
 </head>
 <body>
@@ -558,11 +569,11 @@ button:disabled{background:#28734F !important;color:#fff !important;animation:no
 <script>
 const $=selector=>document.querySelector(selector);
 const SESSION_KEY='gradeup_session_v2';
-const emptyState=()=>({loggedIn:false,account:'',classes:[],markingPeriods:[],selectedPeriod:'MP1'});
+const emptyState=()=>({loggedIn:false,account:'',classes:[],markingPeriods:[],selectedPeriod:'MP1',completedCourses:[],historyAvailable:false});
 let S=emptyState();
 try{
   const saved=sessionStorage.getItem(SESSION_KEY);
-  if(saved){const parsed=JSON.parse(saved);if(parsed&&parsed.loggedIn&&Array.isArray(parsed.classes))S={...emptyState(),...parsed};}
+  if(saved){const parsed=JSON.parse(saved);if(parsed&&parsed.loggedIn&&Array.isArray(parsed.classes))S={...emptyState(),...parsed,completedCourses:Array.isArray(parsed.completedCourses)?parsed.completedCourses:[]};}
 }catch{}
 let currentClassId=null;
 let predictorOpen=false;
@@ -719,9 +730,15 @@ function courseApplicablePeriods(course){
 }
 const GPA_POINTS={'A':4,'A-':3.67,'B+':3.33,'B':3,'B-':2.67,'C+':2.33,'C':2,'C-':1.67,'D':1,'F':0};
 function pointsForGrade(percent,weightType){
-  const l=letter(percent);if(!l)return null;
+  const numeric=Number(percent);
+  if(percent===null||percent===undefined||String(percent).trim()===''||!Number.isFinite(numeric))return null;
+  // SBHS uses the rounded whole-number course grade for the GPA letter-grade
+  // band and for the C- or better weighting threshold. Keep raw percentages
+  // for display, but calculate GPA points from the rounded final grade.
+  const rounded=Math.floor(numeric+0.5);
+  const l=letter(rounded);if(!l)return null;
   let points=GPA_POINTS[l];
-  if(Number(percent)>=70){if(weightType==='honors')points+=.5;else if(weightType==='ap')points+=1;}
+  if(rounded>=70){if(weightType==='honors')points+=.5;else if(weightType==='ap')points+=1;}
   return points;
 }
 function hasPostedGradeEvidence(data){
@@ -804,7 +821,7 @@ function gpaTab(){
   let html=`<div class="tab-intro"><h1>Full-Year GPA</h1><p>Weighted and unweighted estimates using your grades across the full school year.</p></div>
   <div class="gpa-grid">${gpaCard('Unweighted GPA',year.gpa,`${year.used} courses included · ${year.credits.toFixed(1)} potential credits`)}${gpaCard('Weighted GPA',yearWeighted.gpa,`${yearWeighted.used} courses included · Honors +0.5 / AP +1.0 for grades of C− or better`)}</div>
   <div class="section-note">These are estimates, not official transcript GPAs. GradeUp uses grades from each course’s applicable marking periods${periods.length?` (${periods.join(', ')})`:''}. Courses without posted grades are labeled “No Grades” and are not counted as zero. SBHS students can have up to 8 courses in a marking period; semester/split courses are counted only in the marking periods when they apply. ${fullYearDetail} Credits are matched from the uploaded 2026–27 catalog when possible; otherwise 5.0 credits are assumed.</div>
-  <details class="gpa-audit"><summary>Show weighted GPA calculation by course</summary><div class="gpa-audit-list">${S.classes.map(course=>{const base=year.details.find(x=>x.course.id===course.id);const weightedRow=yearWeighted.details.find(x=>x.course.id===course.id);if(!base||!weightedRow)return `<div class="gpa-audit-row"><b>${esc(course.name)}</b><span>No Grades · excluded from GPA and credits</span></div>`;const basePoints=base.points;const finalPoints=weightedRow.points;const bonus=finalPoints-basePoints;const quality=finalPoints*weightedRow.credit;return `<div class="gpa-audit-row"><b>${esc(course.name)}</b><span>${fmt(base.grade)} · ${weightedRow.credit.toFixed(1)} credits · ${esc(weightLabel(weightedRow.level))} · Base ${basePoints.toFixed(2)} + weight ${bonus.toFixed(2)} = ${finalPoints.toFixed(2)} points · ${quality.toFixed(2)} quality points</span></div>`;}).join('')}</div><div class="small" style="margin-top:9px">Weighted total: ${yearWeighted.quality.toFixed(2)} quality points ÷ ${yearWeighted.credits.toFixed(1)} counted credits = ${yearWeighted.gpa===null?'—':yearWeighted.gpa.toFixed(3)}. Honors adds 0.50 and AP / College-level adds 1.00 only for grades C− or better. Courses with no posted grade contribute neither points nor credits. A 0% is counted only when Genesis shows evidence of graded work.</div></details>
+  <details class="gpa-audit"><summary>Show weighted GPA calculation by course</summary><div class="gpa-audit-list">${S.classes.map(course=>{const base=year.details.find(x=>x.course.id===course.id);const weightedRow=yearWeighted.details.find(x=>x.course.id===course.id);if(!base||!weightedRow)return `<div class="gpa-audit-row"><b>${esc(course.name)}</b><span>No Grades · excluded from GPA and credits</span></div>`;const basePoints=base.points;const finalPoints=weightedRow.points;const bonus=finalPoints-basePoints;const quality=finalPoints*weightedRow.credit;return `<div class="gpa-audit-row"><b>${esc(course.name)}</b><span>${fmt(base.grade)} (GPA uses ${Math.floor(base.grade+0.5)}% · ${letter(Math.floor(base.grade+0.5))}) · ${weightedRow.credit.toFixed(1)} credits · ${esc(weightLabel(weightedRow.level))} · Base ${basePoints.toFixed(2)} + weight ${bonus.toFixed(2)} = ${finalPoints.toFixed(2)} points · ${quality.toFixed(2)} quality points</span></div>`;}).join('')}</div><div class="small" style="margin-top:9px">Weighted total: ${yearWeighted.quality.toFixed(2)} quality points ÷ ${yearWeighted.credits.toFixed(1)} counted credits = ${yearWeighted.gpa===null?'—':yearWeighted.gpa.toFixed(3)}. Letter-grade points use the nearest whole-number final grade. Honors adds 0.50 and AP / College-level adds 1.00 when that rounded grade is C− or better. Courses with no posted grade contribute neither points nor credits. A 0% is counted only when Genesis shows evidence of graded work.</div></details>
   <h2>Course weighting</h2><p class="mut" style="margin-top:-5px">Choose the level for each course. This changes weighted GPA only.</p><div class="card">${S.classes.map(course=>{const result=courseGradeForYear(course);const status=result.grade===null?'No Grades':result.count<result.total?`${result.count}/${result.total} marking periods graded`:`${fmt(result.grade)}% full-year grade`;return `<div class="gpa-course"><div><b>${esc(course.name)}</b><div class="small">${esc(status)} · ${courseCredits(course).toFixed(1)} potential credits</div></div><select aria-label="${esc(course.name)} course weight" onchange="setCourseWeight('${esc(course.id)}',this.value)"><option value="regular" ${courseWeight(course)==='regular'?'selected':''}>Regular</option><option value="honors" ${courseWeight(course)==='honors'?'selected':''}>Honors</option><option value="ap" ${courseWeight(course)==='ap'?'selected':''}>AP / College-level</option></select></div>`;}).join('')||'<div class="empty">No current courses are available.</div>'}</div>
   <div class="section-note">SBHS adds 0.5 for Honors and 1.0 for AP / College-level grades of C− or better. D and F grades receive no extra weight. Course weighting outside SBHS does not apply under the published policy.</div>`;
   return html;
@@ -836,16 +853,75 @@ function prerequisiteCourseMatches(prereq,activeName){
   if(!p||!a)return false;
   return p===a;
 }
+
+function allStudentCourseEvidence(){
+  const current=(S.classes||[]).map(course=>({
+    name:course.name,
+    source:'current',
+    course,
+    grade:gradeForActiveCourse(course),
+    schoolYear:'Current school year',
+    gradeLevel:null,
+    finalGrade:null,
+    earnedCredits:null
+  }));
+  const history=(S.completedCourses||[]).map(record=>({
+    ...record,
+    name:record.courseName||record.name||'',
+    source:'history',
+    grade:null
+  }));
+  return [...current,...history].filter(row=>row.name);
+}
+const HISTORY_GRADE_ORDER=['A','A-','B+','B','B-','C+','C','C-','D','F'];
+const HISTORY_GRADE_MIN={A:93,'A-':90,'B+':87,B:83,'B-':80,'C+':77,C:73,'C-':70,D:65,F:0};
+function historyGradeInfo(record){
+  const raw=String(record?.finalGrade??'').trim().toUpperCase();
+  if(!raw)return null;
+  if(/^-?\d+(?:\.\d+)?%?$/.test(raw)){
+    const value=Number(raw.replace('%',''));
+    return Number.isFinite(value)?{type:'number',value,label:`${value}%`}:null;
+  }
+  if(Object.prototype.hasOwnProperty.call(HISTORY_GRADE_MIN,raw)){
+    return {type:'letter',value:raw,minPercent:HISTORY_GRADE_MIN[raw],rank:HISTORY_GRADE_ORDER.indexOf(raw),label:raw};
+  }
+  if(['P','PASS','CR','CREDIT'].includes(raw))return {type:'pass',value:raw,label:raw};
+  return null;
+}
+function historyRecordIsCompleted(record){
+  if(record.earnedCredits!==null&&record.earnedCredits!==undefined&&Number.isFinite(Number(record.earnedCredits))&&Number(record.earnedCredits)<=0)return false;
+  const info=historyGradeInfo(record);
+  return !!info && info.value!=='F';
+}
+function historyRecordMeetsThreshold(record,threshold){
+  if(!historyRecordIsCompleted(record))return false;
+  const info=historyGradeInfo(record);
+  if(!info)return false;
+  if(threshold===null||threshold===undefined)return true;
+  if(info.type==='number')return Math.round(info.value)>=threshold;
+  if(info.type==='letter'){
+    const required=letter(threshold);
+    const requiredRank=HISTORY_GRADE_ORDER.indexOf(required);
+    return requiredRank>=0&&info.rank<=requiredRank;
+  }
+  return false;
+}
+function matchingHistoryForCourse(courseName){
+  return (S.completedCourses||[])
+    .filter(record=>prerequisiteCourseMatches(courseName,record.courseName||record.name))
+    .sort((a,b)=>(Number(b.gradeLevel)||0)-(Number(a.gradeLevel)||0)||String(b.schoolYear||'').localeCompare(String(a.schoolYear||'')));
+}
+function historyEvidenceDescription(record){
+  const info=historyGradeInfo(record);
+  const location=[record.schoolYear,record.gradeLevel?`Grade ${record.gradeLevel}`:null].filter(Boolean).join(' · ');
+  return `${record.courseName||record.name}${location?` (${location})`:''}${info?` — final grade ${info.label}`:''}`;
+}
+
 function getEligibility(item){
   const next=Number(PREFS.nextGrade);
   if(item.grades.length&&next&&!item.grades.includes(next))return {label:`Not for grade ${next}`,cls:'no',detail:`Catalog lists this course for grade${item.grades.length>1?'s':''} ${item.grades.join(', ')}.`};
   if(item.prereq==='No prerequisites')return {label:'Eligible by catalog rules',cls:'good',detail:'The catalog lists no prerequisite for this course. Grade placement and counselor approval may still apply.'};
 
-  // Evaluate each catalog alternative independently so a grade in one course
-  // can never be compared with the threshold belonging to a different course.
-  // The catalog uses both "or" and comma-separated shorthand alternatives
-  // (for example: Algebra 2 >=93, AA2 >=73 or HA2 >=65). Split those
-  // independently so each course keeps its own grade threshold.
   const clauses=String(item.prereq||'').replace(/\([^)]*\)/g,'')
     .split(/\s+or\s+|,\s*(?=(?:AA2|HA2|A1\+?|EG|MCLA)\b)/i);
   const parsed=clauses.map(clause=>{
@@ -855,36 +931,70 @@ function getEligibility(item){
     const course=clause.replace(m[0],' ').replace(/\b(?:or better|or higher|minimum|required)\b/gi,' ').trim();
     return {course,threshold};
   });
-  const matched=[];
+
+  const historical=[];
+  const active=[];
   for(const rule of parsed){
-    const c=S.classes.find(x=>prerequisiteCourseMatches(rule.course,x.name));
-    if(c)matched.push({rule,course:c,grade:gradeForActiveCourse(c)});
-  }
-  if(matched.length){
-    const passed=matched.find(x=>x.rule.threshold===null || (x.grade!==null&&Math.round(x.grade)>=x.rule.threshold));
-    if(passed){
-      const rounded=passed.grade===null?null:Math.round(passed.grade);
-      const delta=passed.rule.threshold===null?null:rounded-passed.rule.threshold;
-      return {label:'On track',cls:'good',detail:delta===null?`Currently taking ${passed.course.name}; the catalog lists this course as a prerequisite.`:`${passed.course.name}: ${fmt(passed.grade)}% (rounds to ${rounded}%) — meets the ${passed.rule.threshold}% requirement after district rounding. Keep working hard!`};
+    const history=matchingHistoryForCourse(rule.course);
+    for(const record of history){
+      const info=historyGradeInfo(record);
+      if(info)historical.push({rule,record,info,passed:historyRecordMeetsThreshold(record,rule.threshold)});
     }
-    const closest=matched.sort((a,b)=>(b.grade??-1)-(a.grade??-1))[0];
-    if(closest.grade!==null&&closest.rule.threshold!==null){
-      const rounded=Math.round(closest.grade);
-      const gap=closest.rule.threshold-rounded;
-      return {label:gap<=1?'Almost there':'Off track',cls:'progress',detail:`${closest.course.name}: ${fmt(closest.grade)}% (rounds to ${rounded}%) — ${fmt(gap)} rounded percentage point${gap===1?'':'s'} below the ${closest.rule.threshold}% requirement. ${gap<=1?'Almost there!':`You need ${fmt(gap)} more rounded percentage point${gap===1?'':'s'}.`}`};
+    const current=S.classes.find(course=>prerequisiteCourseMatches(rule.course,course.name));
+    if(current){
+      const grade=gradeForActiveCourse(current);
+      active.push({rule,course:current,grade});
     }
-    return {label:'In progress',cls:'progress',detail:`Currently taking ${matched[0].course.name}; the final course grade must be confirmed.`};
   }
 
-  // Detect a course in the same subject but at the wrong level. For example,
-  // regular Algebra II does not satisfy Advanced Algebra 2 or Honors Algebra 2.
+  // A completed high-school course is stronger evidence than a current course
+  // with a provisional marking-period grade.
+  const completedPass=historical.find(entry=>entry.passed);
+  if(completedPass){
+    const {rule,record,info}=completedPass;
+    if(rule.threshold===null){
+      return {label:'On track',cls:'good',detail:`Completed ${historyEvidenceDescription(record)}. This satisfies the catalog's course prerequisite.`};
+    }
+    const requiredLetter=letter(rule.threshold);
+    return {label:'On track',cls:'good',detail:`${historyEvidenceDescription(record)} — meets the ${rule.threshold}% requirement based on the final transcript grade (${requiredLetter} or better). Keep working hard!`};
+  }
+
+  // Check current enrollment and live marking-period grades.
+  const currentPass=active.find(entry=>entry.rule.threshold===null||(entry.grade!==null&&Math.round(entry.grade)>=entry.rule.threshold));
+  if(currentPass){
+    const {rule,course,grade}=currentPass;
+    if(rule.threshold===null)return {label:'In progress',cls:'progress',detail:`Currently taking ${course.name}; the catalog lists this course as a prerequisite. Final completion still needs to be confirmed.`};
+    return {label:'On track',cls:'good',detail:`${course.name}: ${fmt(grade)}% (rounds to ${Math.round(grade)}%) — meets the ${rule.threshold}% requirement after district rounding. Keep working hard!`};
+  }
+
+  const currentWithGrade=active.filter(entry=>entry.grade!==null&&entry.rule.threshold!==null)
+    .sort((a,b)=>b.grade-a.grade)[0];
+  if(currentWithGrade){
+    const {rule,course,grade}=currentWithGrade;
+    const rounded=Math.round(grade);
+    const gap=rule.threshold-rounded;
+    return {label:gap<=1?'Almost there':'Off track',cls:'progress',detail:`${course.name}: ${fmt(grade)}% (rounds to ${rounded}%) — ${fmt(gap)} rounded percentage point${gap===1?'':'s'} below the ${rule.threshold}% requirement. ${gap<=1?'Almost there!':`You need ${fmt(gap)} more rounded percentage point${gap===1?'':'s'}.`}`};
+  }
+
+  const historicalFail=historical.find(entry=>entry.info?.type==='letter'||entry.info?.type==='number');
+  if(historicalFail){
+    const {rule,record,info}=historicalFail;
+    const required=rule.threshold===null?'a passing final grade':`${rule.threshold}% (${letter(rule.threshold)} or better)`;
+    return {label:'Off track',cls:'no',detail:`Grade History shows ${historyEvidenceDescription(record)}, which does not meet the catalog requirement of ${required}. A counselor can confirm whether another placement route applies.`};
+  }
+
+  // Detect a course in the same subject but at the wrong level.
   const levelSensitive=parsed.some(r=>/\b(?:advanced|honors|ap)\b/i.test(r.course));
   if(levelSensitive){
     const subjectWords=parsed.map(r=>prereqCourseKey(r.course).replace(/\b(?:advanced|honors|ap)\b/g,'').trim());
-    const related=S.classes.find(c=>subjectWords.some(w=>w&&prereqCourseKey(c.name).replace(/\b(?:advanced|honors|ap)\b/g,'').trim()===w));
-    if(related)return {label:'Not eligible by catalog rules',cls:'no',detail:`You're currently taking ${related.name}. The catalog requires ${parsed.map(r=>r.course).join(' or ')}; regular-level ${related.name} does not meet those course-level prerequisites.`};
+    const related=allStudentCourseEvidence().find(c=>subjectWords.some(w=>w&&prereqCourseKey(c.name).replace(/\b(?:advanced|honors|ap)\b/g,'').trim()===w));
+    if(related){
+      const where=related.source==='history'?'Grade History shows':'You are currently taking';
+      return {label:'Not eligible by catalog rules',cls:'no',detail:`${where} ${related.name}. The catalog requires ${parsed.map(r=>r.course).join(' or ')}; this course level does not satisfy that prerequisite.`};
+    }
   }
-  return {label:'Needs review',cls:'review',detail:item.prereq==='Not specified in catalog'?'The catalog does not provide a clear prerequisite statement.':'GradeUp cannot verify prior completed courses, recommendations, placement, or other conditions from the current Genesis gradebook. '+item.prereq};
+  if(active.length)return {label:'In progress',cls:'progress',detail:`Currently taking ${active[0].course.name}; the final course grade must be confirmed.`};
+  return {label:'Needs review',cls:'review',detail:item.prereq==='Not specified in catalog'?'The catalog does not provide a clear prerequisite statement.':`GradeUp checked your current courses and imported high-school Grade History but could not verify the listed prerequisite: ${item.prereq}`};
 }
 function catalogPrereqMentionsCourse(prereq,activeName){
   const key=prereqCourseKey(activeName);
@@ -894,11 +1004,14 @@ function catalogPrereqMentionsCourse(prereq,activeName){
 }
 function recommendedNextCourses(){
   const next=Number(PREFS.nextGrade);
+  const evidence=allStudentCourseEvidence();
   return COURSE_CATALOG.filter(item=>
     item.prereq && item.prereq!=='No prerequisites' &&
     (!item.grades.length||!next||item.grades.includes(next)) &&
     !((PREFS.selected||[]).includes(item.code)) &&
-    S.classes.some(course=>catalogPrereqMentionsCourse(item.prereq,course.name))
+    !evidence.some(course=>prerequisiteCourseMatches(item.name,course.name)&&
+      (course.source!=='history'||historyRecordIsCompleted(course))) &&
+    evidence.some(course=>catalogPrereqMentionsCourse(item.prereq,course.name))
   ).map(item=>({item,status:getEligibility(item)}));
 }
 function recommendedCoursesMarkup(){
@@ -935,13 +1048,37 @@ function selectedGoalsMarkup(){
   if(!items.length)return '<div class="empty">No next-year courses saved yet. Search the catalog below and add courses to your plan.</div>';
   return items.map(item=>{const status=getEligibility(item);return `<div class="selected-course"><div class="grow"><b>${esc(item.name)}</b><div class="small">${esc(item.category)} · ${item.credits.toFixed(1)} credits</div><span class="eligibility ${status.cls}">${esc(status.label)}</span><div class="small" style="margin-top:5px">${esc(status.detail)}</div><div class="small" style="margin-top:5px"><b>Catalog prerequisite:</b> ${esc(item.prereq)}</div></div><button class="ghost" onclick="toggleGoalCourse('${item.code}')" aria-label="Remove ${esc(item.name)}">Remove</button></div>`;}).join('');
 }
+
+function highSchoolHistoryMarkup(){
+  const records=S.completedCourses||[];
+  if(!S.historyAvailable){
+    return `<div class="section-note">Genesis Grade History has not been imported for this session. After deploying the updated files, log out and sign in again so GradeUp can scan courses from Grades 9–12.</div>`;
+  }
+  if(!records.length){
+    return `<div class="section-note">GradeUp opened Genesis Grade History, but did not find any Grade 9–12 course rows. The history page may be empty or Genesis may have changed its layout.</div>`;
+  }
+  const groups=new Map();
+  for(const record of records){
+    const key=`${record.schoolYear||'School year unavailable'} · Grade ${record.gradeLevel||'—'}`;
+    if(!groups.has(key))groups.set(key,[]);
+    groups.get(key).push(record);
+  }
+  const body=[...groups.entries()].map(([label,items])=>`<div class="history-year"><b>${esc(label)}</b>${items.map(record=>{
+    const grade=historyGradeInfo(record)?.label||'No final grade';
+    const credits=record.attemptedCredits!==null&&record.attemptedCredits!==undefined?`${Number(record.attemptedCredits).toFixed(2)} attempted credits`:'Credits unavailable';
+    return `<div class="history-course"><span>${esc(record.courseName)}</span><span>${esc(grade)} <span class="small">· ${esc(credits)}</span></span></div>`;
+  }).join('')}</div>`).join('');
+  return `<details class="history-details"><summary>View all ${records.length} high-school courses imported from Genesis</summary><div class="history-list">${body}</div></details>`;
+}
+
 function goalsTab(){
   const setup=!PREFS.setupComplete;
   const cats=['All',...new Set(COURSE_CATALOG.map(x=>x.category))];
   return `<div class="tab-intro"><h1>Next Year's Goals</h1><p>Plan your classes using the South Brunswick High School 2026–27 catalog.</p></div>
   ${setup?`<div class="card"><h2 style="margin:0 0 5px">Set up your course plan</h2><p class="mut">GradeUp found your current courses in Genesis. Choose the grade you'll be entering next year, then save courses you're considering.</p><div class="small" style="margin:12px 0 6px"><b>Current courses detected from Genesis (${S.classes.length})</b></div><div class="row" style="flex-wrap:wrap;gap:7px">${S.classes.map(c=>`<span class="pill">${esc(c.name)}</span>`).join('')||'<span class="small">No current courses detected.</span>'}</div><div class="preference-editor" style="margin-top:16px"><label class="small" for="nextGrade">Next year's grade</label><select id="nextGrade"><option value="">Choose grade</option>${[9,10,11,12].map(g=>`<option value="${g}" ${Number(PREFS.nextGrade)===g?'selected':''}>Grade ${g}</option>`).join('')}</select><button onclick="saveNextYearPrefs()">Save grade and continue</button></div></div>`:`<div class="card"><div class="row" style="justify-content:space-between;align-items:center"><div><b>Planning for Grade ${esc(PREFS.nextGrade||'—')}</b><div class="small">${(PREFS.selected||[]).length} courses saved</div></div><button class="ghost" onclick="editPreferences()">Edit setup</button></div></div>`}
   <h2>Saved course preferences <span class="pill" id="goalCount">${(PREFS.selected||[]).length}</span></h2><div class="card" id="selectedGoals">${selectedGoalsMarkup()}</div>
-  <h2>Recommended next courses</h2><p class="mut" style="margin-top:-5px">Courses whose catalog prerequisites connect to classes you're taking now. These are pathway suggestions, not guaranteed placements.</p><div class="card" id="recommendedCourses">${recommendedCoursesMarkup()}</div>
+  <h2>High-school course history</h2><p class="mut" style="margin-top:-5px">GradeUp checks courses from Grades 9–12, including completed courses from previous school years.</p><div class="card">${highSchoolHistoryMarkup()}</div>
+  <h2>Recommended next courses</h2><p class="mut" style="margin-top:-5px">Courses whose catalog prerequisites connect to classes you've taken before or are taking now. These are pathway suggestions, not guaranteed placements.</p><div class="card" id="recommendedCourses">${recommendedCoursesMarkup()}</div>
   <h2>Explore the course catalog</h2><p class="mut" style="margin-top:-5px">Search by course, department, or course code. Courses outside the selected grade are filtered out.</p>
   <div class="catalog-toolbar"><input id="goalSearch" placeholder="Search courses…" value="${esc(catalogQuery)}" oninput="searchGoals()"><select id="goalCategory" onchange="searchGoals()">${cats.map(c=>`<option value="${esc(c)}" ${catalogCategory===c?'selected':''}>${esc(c==='All'?'All departments':c)}</option>`).join('')}</select></div>
   <div class="catalog-results" id="goalCourseResults">${catalogResultsMarkup()}</div>
@@ -1117,6 +1254,8 @@ async function syncGenesis(){
       loggedIn:true,
       account:username,
       classes:result.classes,
+      completedCourses:Array.isArray(result.completedCourses)?result.completedCourses:[],
+      historyAvailable:result.historyAvailable===true,
       markingPeriods:result.markingPeriods||[],
       selectedPeriod:(result.markingPeriods||[]).some(period=>period.id==='MP1')?'MP1':(result.markingPeriods||[])[0]?.id||'MP1'
     };
